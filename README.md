@@ -8,7 +8,15 @@ A person and an agent use the same visible workspace to reproduce a failure, ins
 
 ## Start here
 
-- Open the [interactive mockup](prototype/Agent%20Harness%20Lab.html) in a browser.
+- Run the application locally:
+
+  ```bash
+  npm install
+  npm run dev
+  ```
+
+- Run the complete verification suite with `npm run test:all`.
+- Use the [interactive mockup](prototype/Agent%20Harness%20Lab.html) as the visual reference.
 - Read the [product requirements](docs/Agent%20Harness%20Lab%20PRD.md).
 - Review the [architecture](docs/Architecture.md) and [implementation plan](docs/Implementation%20Plan.md).
 - See the concise [product proposal](docs/Agent%20Harness%20Lab%20Proposal.md), [research brief](docs/Research%20Brief.md), and [repository and stack decision](docs/Repository%20and%20Tech%20Stack.md).
@@ -31,23 +39,23 @@ All mockup results are labeled deterministic fixtures. The prototype does not cl
 agent-harness-lab/
 ├── README.md
 ├── docs/
-│   ├── Agent Harness Lab PRD.md
-│   ├── Agent Harness Lab Proposal.md
-│   ├── Architecture.md
-│   ├── Implementation Plan.md
-│   ├── Repository and Tech Stack.md
-│   ├── Research Brief.md
-│   └── research/
-└── prototype/
-    ├── Agent Harness Lab.html
-    └── _d_meta.json
+├── output/playwright/       # Reviewable browser proof by PR
+├── prototype/               # Approved visual reference
+├── public/
+├── scripts/                 # Repeatable proof capture
+├── src/
+│   ├── app/                 # Commands, guards, store, selectors
+│   └── domain/              # Pure state and transition contracts
+└── tests/
+    ├── e2e/
+    └── unit/
 ```
 
-The implementation plan evolves this concept package into a strict TypeScript application with a pure domain core, shared UI/WebMCP command service, deterministic scenario runner, evidence receipts, and contract and browser tests.
+The domain core is independent of React, browser storage, and WebMCP. Human controls already use the shared command service; the planned agent adapter will enter through that same boundary. Each command commits one complete stable revision or leaves the workspace unchanged.
 
 ## Submission boundary
 
-The development repository starts private. The WebMCP Challenge requires a public repository with an open-source license at submission time. Changing visibility and selecting a license are explicit owner decisions in the final submission gate; they are not performed by the application or its WebMCP tools.
+The WebMCP Challenge requires a public repository with an open-source license at submission time. Repository visibility and license selection are explicit release decisions; they are not performed by the application or its WebMCP tools.
 
 ## Challenge
 
