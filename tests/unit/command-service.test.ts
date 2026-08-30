@@ -2,12 +2,22 @@ import { describe, expect, it, vi } from "vitest";
 import { createCommandService, type CommandEffects } from "../../src/app/commands";
 import { createLabStore } from "../../src/app/create-store";
 import { LabDomainError } from "../../src/domain/errors";
+import {
+  canonicalSha256,
+  runScenarioBaseline,
+  runScenarioSuite,
+} from "../../src/domain/evaluation";
 import { createInitialLabState, type LabCommand } from "../../src/domain/types";
+import { completionWithoutProofScenario } from "../../src/scenarios/completion-without-proof";
+
+const baselineResult = await runScenarioBaseline(completionWithoutProofScenario);
+const candidateSuite = await runScenarioSuite(completionWithoutProofScenario);
 
 const patch = {
-  id: "patch-1",
-  layer: "completion-contract",
+  id: completionWithoutProofScenario.candidate.patch.id,
+  layer: completionWithoutProofScenario.candidate.patch.layer,
   hypothesis: "Require evidence before completion.",
+  diff: completionWithoutProofScenario.candidate.patch.diff,
 };
 
 function context(commandId: string, actor: "human" | "agent" = "human") {
@@ -26,8 +36,8 @@ function createHarness(effects?: Partial<CommandEffects>) {
       },
     },
     effects: {
-      runBaseline: effects?.runBaseline ?? vi.fn(async () => undefined),
-      runCandidateSuite: effects?.runCandidateSuite ?? vi.fn(async () => undefined),
+      runBaseline: effects?.runBaseline ?? vi.fn(async () => baselineResult),
+      runCandidateSuite: effects?.runCandidateSuite ?? vi.fn(async () => candidateSuite),
     },
   });
   return { store, service };
@@ -81,6 +91,40 @@ describe("command service", () => {
     expect(store.getState().events).toEqual([]);
   });
 
+  it("rejects rehashed effect output that is not derived from the scenario fixture", async () => {
+    const forgedSuite = structuredClone(candidateSuite);
+    const target = forgedSuite.runs.find((run) => run.trialKind === "target");
+    const firstFact = target?.facts[0];
+    if (!target || !firstFact) throw new Error("Expected a target fact.");
+    (firstFact as { detail: string }).detail = "Fabricated by an injected effect.";
+    const { resultDigest: _oldRunDigest, ...runCausalData } = target;
+    (target as { resultDigest: string }).resultDigest = await canonicalSha256(
+      runCausalData,
+    );
+    const { resultDigest: _oldSuiteDigest, ...suiteCausalData } = forgedSuite;
+    (forgedSuite as { resultDigest: string }).resultDigest = await canonicalSha256(
+      suiteCausalData,
+    );
+
+    const { store, service } = createHarness({
+      runCandidateSuite: vi.fn(async () => forgedSuite),
+    });
+    await service.dispatch({ type: "RUN_BASELINE" }, context("baseline-forged"));
+    await service.dispatch(
+      { type: "STAGE_PATCH", patch },
+      context("patch-forged"),
+    );
+    const before = store.getState();
+
+    await expect(
+      service.dispatch(
+        { type: "RUN_CANDIDATE_SUITE" },
+        context("candidate-forged"),
+      ),
+    ).rejects.toMatchObject({ code: "COMMAND_FAILED" });
+    expect(store.getState()).toBe(before);
+  });
+
   it("returns the prior result when a completed command ID is retried", async () => {
     const { store, service } = createHarness();
     const command: LabCommand = { type: "LOAD_MISSION", missionId: "handoff" };
@@ -103,7 +147,9 @@ describe("command service", () => {
 
   it("rejects overlapping commands while a run is active", async () => {
     let release: (() => void) | undefined;
-    const waiting = new Promise<void>((resolve) => { release = resolve; });
+    const waiting = new Promise<typeof baselineResult>((resolve) => {
+      release = () => resolve(baselineResult);
+    });
     const { service } = createHarness({
       runBaseline: vi.fn(() => waiting),
     });
@@ -162,8 +208,8 @@ describe("command service", () => {
         },
       },
       effects: {
-        runBaseline: vi.fn(async () => undefined),
-        runCandidateSuite: vi.fn(async () => undefined),
+        runBaseline: vi.fn(async () => baselineResult),
+        runCandidateSuite: vi.fn(async () => candidateSuite),
       },
     });
     store.subscribe(() => { throw listenerError; });

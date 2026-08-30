@@ -4,7 +4,7 @@
 
 Agent Harness Lab is a browser-native WebMCP workbench for evaluating changes to the system around an AI agent: instructions, skills, memory rules, tool policies, permissions, checkpoints, retry behavior, and completion gates.
 
-A person and an agent use the same visible workspace to reproduce a failure, inspect its trajectory, stage one harness patch, run target and sealed fixtures, compare causal evidence, and make a promote-or-reject decision. The agent can operate the lab through eight structured WebMCP tools. Promotion and rejection remain human-only.
+The challenge experience is designed for a person and an agent to use the same visible workspace: reproduce a failure, inspect its trajectory, stage one harness patch, run target and sealed fixtures, compare causal evidence, and make a promote-or-reject decision. The planned WebMCP adapter exposes eight structured tools; promotion and rejection remain human-only.
 
 ## Start here
 
@@ -31,7 +31,7 @@ The primary fixture, **Completion without proof**, shows a coding agent changing
 4. Evidence
 5. Safety
 
-All mockup results are labeled deterministic fixtures. The prototype does not claim to execute a live model or observe production agents.
+The executable primary fixture generates ordered facts, derives every assertion and five-signal count, and produces canonical SHA-256 result digests. All built-in results are labeled deterministic fixtures. The app does not claim to execute a live model or observe production agents.
 
 ## Repository map
 
@@ -45,7 +45,8 @@ agent-harness-lab/
 ├── scripts/                 # Repeatable proof capture
 ├── src/
 │   ├── app/                 # Commands, guards, store, selectors
-│   └── domain/              # Pure state and transition contracts
+│   ├── domain/              # Pure state, transitions, graders, hashing
+│   └── scenarios/           # Immutable fixture contracts and facts
 └── tests/
     ├── e2e/
     └── unit/

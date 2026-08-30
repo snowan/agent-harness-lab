@@ -22,6 +22,7 @@ const patch = {
   id: "patch-1",
   layer: "completion-contract",
   hypothesis: "Require evidence before completion.",
+  diff: ["Require browser evidence."],
 };
 
 function stateAt(phase: LabPhase): LabState {
@@ -97,7 +98,7 @@ describe("command guards", () => {
         { type: "STAGE_PATCH", patch: { ...patch, hypothesis: "  " } },
         "human",
       ),
-    ).toThrow(/needs an ID, harness layer, and causal hypothesis/);
+    ).toThrow(/needs an ID, harness layer, reviewable diff, and causal hypothesis/);
   });
 
   it("rejects a hypothesis longer than 280 characters", () => {

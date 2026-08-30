@@ -1,7 +1,12 @@
 import { useId, useState, useSyncExternalStore } from "react";
 import type { ScenarioId } from "./domain/types";
 import { labCommands, labStore } from "./app/runtime";
-import { selectLabStateSummary, selectRecentEvents } from "./app/selectors";
+import {
+  selectBaselineEvidence,
+  selectBaselineRunAvailability,
+  selectLabStateSummary,
+  selectRecentEvents,
+} from "./app/selectors";
 
 const missionNames: Readonly<Record<ScenarioId, string>> = {
   completion: "Completion without proof",
@@ -33,10 +38,14 @@ export default function App() {
   );
   const summary = selectLabStateSummary(state);
   const recentEvents = selectRecentEvents(state);
+  const baselineAvailability = selectBaselineRunAvailability(state, "human");
+  const baselineEvidence = selectBaselineEvidence(state);
   const missionSelectId = useId();
+  const baselineHelpId = useId();
   const [selectedMission, setSelectedMission] = useState<ScenarioId>(state.missionId);
   const [message, setMessage] = useState("Workspace ready.");
   const [error, setError] = useState<string | null>(null);
+  const [runningBaseline, setRunningBaseline] = useState(false);
 
   async function loadMission() {
     setError(null);
@@ -52,6 +61,26 @@ export default function App() {
       setMessage(`${missionNames[result.state.missionId]} loaded in a clean workspace.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
+  async function runBaseline() {
+    setError(null);
+    setRunningBaseline(true);
+    try {
+      await labCommands.dispatch(
+        { type: "RUN_BASELINE" },
+        {
+          commandId: nextCommandId(),
+          actor: "human",
+          source: "ui",
+        },
+      );
+      setMessage("Baseline reproduced; the declared invariant failed as expected.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setRunningBaseline(false);
     }
   }
 
@@ -105,6 +134,18 @@ export default function App() {
               </select>
               <button type="button" onClick={loadMission}>Load mission</button>
             </div>
+            <div className="baseline-control">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={!baselineAvailability.available || runningBaseline}
+                aria-describedby={baselineHelpId}
+                onClick={runBaseline}
+              >
+                {runningBaseline ? "Running fixture…" : "Run deterministic baseline"}
+              </button>
+              <small id={baselineHelpId}>{baselineAvailability.reason}</small>
+            </div>
           </div>
         </section>
 
@@ -117,7 +158,7 @@ export default function App() {
           <article className="status-card">
             <span>Command path</span>
             <strong>Shared</strong>
-            <p>Visible controls and agent tools use the same command boundary.</p>
+            <p>Visible controls use the boundary the planned agent adapter will share.</p>
           </article>
           <article className="status-card accent">
             <span>Decision authority</span>
@@ -125,6 +166,59 @@ export default function App() {
             <p>Promotion and rejection require a reviewed comparison and human actor.</p>
           </article>
         </section>
+
+        {baselineEvidence ? (
+          <section
+            className="baseline-result"
+            aria-labelledby="baseline-result-heading"
+            data-testid="baseline-result"
+          >
+            <div className="baseline-result-heading">
+              <div>
+                <p className="section-label">{baselineEvidence.fixtureDisclosure}</p>
+                <h2 id="baseline-result-heading">Baseline result</h2>
+              </div>
+              <span className="expected-failure-badge">Failed as expected</span>
+            </div>
+
+            <p className="invariant-copy">
+              <strong>Declared invariant</strong>
+              {baselineEvidence.invariant}
+            </p>
+
+            <div className="evidence-summary" aria-label="Derived assertion summary">
+              <div>
+                <span>Passed</span>
+                <strong data-testid="baseline-passed">
+                  {baselineEvidence.passedAssertions}/{baselineEvidence.applicableAssertions}
+                </strong>
+              </div>
+              <div>
+                <span>Failed</span>
+                <strong data-testid="baseline-failed">
+                  {baselineEvidence.failedAssertions}/{baselineEvidence.applicableAssertions}
+                </strong>
+              </div>
+              <div>
+                <span>Result digest</span>
+                <code data-testid="baseline-digest">
+                  {baselineEvidence.resultDigest}
+                </code>
+              </div>
+            </div>
+
+            <article className="evidence-link">
+              <span>Assertion → fact</span>
+              <strong>{baselineEvidence.firstFailure.title}</strong>
+              <p>{baselineEvidence.firstFailure.message}</p>
+              <code data-testid="baseline-evidence-ref">
+                {baselineEvidence.firstFailure.assertionId}
+                <span aria-hidden="true"> → </span>
+                {baselineEvidence.firstFailure.evidenceFactId}
+              </code>
+            </article>
+          </section>
+        ) : null}
 
         <section className="activity-panel" aria-labelledby="activity-heading">
           <div className="activity-heading">
