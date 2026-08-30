@@ -29,11 +29,17 @@ export interface CandidatePatch {
   readonly diff: readonly string[];
 }
 
-export interface HumanDecision {
-  readonly outcome: "promoted" | "rejected";
-  readonly actor: "human";
-  readonly comparedRevision: number;
-}
+export type HumanDecision =
+  | {
+      readonly outcome: "promoted";
+      readonly actor: "human";
+      readonly comparedRevision: number;
+    }
+  | {
+      readonly outcome: "rejected";
+      readonly actor: "human";
+      readonly comparedRevision: number;
+    };
 
 interface EventMeta {
   readonly id: string;
@@ -74,11 +80,11 @@ export type DomainEvent =
     })
   | (EventMeta & {
       readonly type: "CANDIDATE_PROMOTED";
-      readonly decision: HumanDecision;
+      readonly decision: Extract<HumanDecision, { readonly outcome: "promoted" }>;
     })
   | (EventMeta & {
       readonly type: "CANDIDATE_REJECTED";
-      readonly decision: HumanDecision;
+      readonly decision: Extract<HumanDecision, { readonly outcome: "rejected" }>;
     });
 
 export interface LabState {

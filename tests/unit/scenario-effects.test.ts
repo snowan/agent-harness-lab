@@ -94,23 +94,24 @@ describe("scenario command effects", () => {
       context(),
     );
     await service.dispatch({ type: "RUN_BASELINE" }, context());
-    await service.dispatch(
-      {
-        type: "STAGE_PATCH",
-        patch: {
-          id: completionWithoutProofScenario.candidate.patch.id,
-          layer: completionWithoutProofScenario.candidate.patch.layer,
-          hypothesis: "This fixture should be rejected before evaluation.",
-          diff: ["A caller-supplied patch that impersonates the fixture identity."],
-        },
-      },
-      context(),
-    );
-    const mismatched = store.getState();
+    const baselineFailed = store.getState();
 
     await expect(
-      service.dispatch({ type: "RUN_CANDIDATE_SUITE" }, context()),
+      service.dispatch(
+        {
+          type: "STAGE_PATCH",
+          patch: {
+            id: completionWithoutProofScenario.candidate.patch.id,
+            layer: completionWithoutProofScenario.candidate.patch.layer,
+            hypothesis: "This fixture should be rejected before staging.",
+            diff: ["A caller-supplied patch that impersonates the fixture identity."],
+          },
+        },
+        context(),
+      ),
     ).rejects.toMatchObject({ code: "INVALID_INPUT" });
-    expect(store.getState()).toBe(mismatched);
+    expect(store.getState()).toBe(baselineFailed);
+    expect(store.getState().phase).toBe("baseline_failed");
+    expect(store.getState().candidate).toBeNull();
   });
 });

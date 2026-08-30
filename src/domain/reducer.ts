@@ -1,6 +1,6 @@
 import { LabDomainError } from "./errors";
 import { assertTraceableRun, assertTraceableSuite } from "./evaluation";
-import type { DomainEvent, LabPhase, LabState } from "./types";
+import type { CandidatePatch, DomainEvent, HumanDecision, LabPhase, LabState } from "./types";
 import { getScenarioDefinition } from "../scenarios/registry";
 
 function invalidResult(message: string): never {
@@ -169,6 +169,50 @@ function assertCandidateSuiteStructure(state: LabState, event: Extract<DomainEve
   }
 }
 
+function assertFixturePatchEvent(state: LabState, patch: CandidatePatch): void {
+  const fixture = getScenarioDefinition(state.missionId)?.candidate.patch;
+  const identityMatches = Boolean(
+    fixture
+    && patch.id === fixture.id
+    && patch.layer === fixture.layer
+    && patch.diff.length === fixture.diff.length
+    && patch.diff.every((line, index) => line === fixture.diff[index]),
+  );
+  const hypothesis = patch.hypothesis.trim();
+  if (!identityMatches || !hypothesis || hypothesis.length > 280) {
+    invalidResult(
+      `PATCH_STAGED must use the declared fixture identity for mission ${state.missionId}, with only a non-empty hypothesis of at most 280 characters editable.`,
+    );
+  }
+}
+
+function assertHumanDecisionEvent(
+  state: LabState,
+  event: Extract<DomainEvent, {
+    readonly type: "CANDIDATE_PROMOTED" | "CANDIDATE_REJECTED";
+  }>,
+): void {
+  const expectedOutcome: HumanDecision["outcome"] = event.type === "CANDIDATE_PROMOTED"
+    ? "promoted"
+    : "rejected";
+  if (
+    event.actor !== "human"
+    || event.decision.actor !== "human"
+    || event.decision.comparedRevision !== state.revision
+    || event.decision.outcome !== expectedOutcome
+  ) {
+    invalidResult(
+      `${event.type} must be a human decision for current compared revision ${state.revision}.`,
+    );
+  }
+  if (
+    event.type === "CANDIDATE_PROMOTED"
+    && state.candidateSuiteResult?.status !== "passed"
+  ) {
+    invalidResult("CANDIDATE_PROMOTED requires a passing candidate suite; a failed comparison can only be rejected.");
+  }
+}
+
 function requirePhase(
   state: LabState,
   event: DomainEvent,
@@ -248,6 +292,7 @@ export function reduceLabState(state: LabState, event: DomainEvent): LabState {
 
     case "PATCH_STAGED":
       requirePhase(state, event, "baseline_failed");
+      assertFixturePatchEvent(state, event.patch);
       return advance(state, event, {
         phase: "patch_staged",
         candidate: event.patch,
@@ -280,6 +325,7 @@ export function reduceLabState(state: LabState, event: DomainEvent): LabState {
 
     case "CANDIDATE_PROMOTED":
       requirePhase(state, event, "compared");
+      assertHumanDecisionEvent(state, event);
       return advance(state, event, {
         phase: "promoted",
         decision: event.decision,
@@ -287,6 +333,7 @@ export function reduceLabState(state: LabState, event: DomainEvent): LabState {
 
     case "CANDIDATE_REJECTED":
       requirePhase(state, event, "compared");
+      assertHumanDecisionEvent(state, event);
       return advance(state, event, {
         phase: "rejected",
         decision: event.decision,
