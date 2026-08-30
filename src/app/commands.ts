@@ -1,4 +1,9 @@
 import { LabDomainError, isLabDomainError } from "../domain/errors";
+import {
+  canonicalJson,
+  verifySuiteRun,
+  verifyTrialRun,
+} from "../domain/evaluation";
 import { reduceLabEvents, reduceLabState } from "../domain/reducer";
 import type {
   CommandContext,
@@ -7,6 +12,8 @@ import type {
   LabCommand,
   LabState,
 } from "../domain/types";
+import type { SuiteRun, TrialRun } from "../scenarios/types";
+import { getScenarioDefinition } from "../scenarios/registry";
 import { assertCommandAllowed } from "./guards";
 import type { LabStore } from "./create-store";
 
@@ -23,8 +30,8 @@ export interface CandidateRunRequest {
 }
 
 export interface CommandEffects {
-  readonly runBaseline: (request: BaselineRunRequest) => Promise<void>;
-  readonly runCandidateSuite: (request: CandidateRunRequest) => Promise<void>;
+  readonly runBaseline: (request: BaselineRunRequest) => Promise<TrialRun>;
+  readonly runCandidateSuite: (request: CandidateRunRequest) => Promise<SuiteRun>;
 }
 
 export interface CommandIdFactory {
@@ -60,6 +67,7 @@ function commandFingerprint(command: LabCommand, context: CommandContext): strin
           command.patch.id,
           command.patch.layer,
           command.patch.hypothesis,
+          ...command.patch.diff,
         ];
       case "PROMOTE":
       case "REJECT":
@@ -117,6 +125,44 @@ function commandFailure(
   );
 }
 
+function requireScenario(state: LabState) {
+  const scenario = getScenarioDefinition(state.missionId);
+  if (!scenario) {
+    throw new LabDomainError(
+      "COMMAND_FAILED",
+      `${state.missionId} is cataloged but its deterministic engine fixture is not implemented yet. Choose Completion without proof.`,
+    );
+  }
+  return scenario;
+}
+
+function assertStagedFixturePatch(state: LabState): void {
+  const scenario = requireScenario(state);
+  const stagedPatch = state.candidate;
+  if (!stagedPatch) {
+    throw new LabDomainError(
+      "INVALID_INPUT",
+      "The candidate suite requires a staged fixture patch.",
+    );
+  }
+  const stagedIdentity = {
+    id: stagedPatch.id,
+    layer: stagedPatch.layer,
+    diff: stagedPatch.diff,
+  };
+  const fixtureIdentity = {
+    id: scenario.candidate.patch.id,
+    layer: scenario.candidate.patch.layer,
+    diff: scenario.candidate.patch.diff,
+  };
+  if (canonicalJson(stagedIdentity) !== canonicalJson(fixtureIdentity)) {
+    throw new LabDomainError(
+      "INVALID_INPUT",
+      `The staged patch does not match ${scenario.candidate.patch.id}. Reset the mission and stage the declared fixture patch.`,
+    );
+  }
+}
+
 export function createCommandService({
   store,
   effects,
@@ -149,6 +195,7 @@ export function createCommandService({
         ];
 
       case "RUN_BASELINE": {
+        const scenario = requireScenario(stableState);
         const runId = ids.nextRunId("baseline", stableState);
         const started: DomainEvent = {
           ...eventMeta(context, 0),
@@ -156,18 +203,31 @@ export function createCommandService({
           runId,
         };
         const runningState = reduceLabState(stableState, started);
-        await effects.runBaseline({
+        const result = await effects.runBaseline({
           state: runningState,
           runId,
           ...(context.signal ? { signal: context.signal } : {}),
         });
         abortIfRequested(context);
+        await verifyTrialRun(scenario, result);
+        if (
+          result.harnessRole !== "baseline"
+          || result.trialKind !== "target"
+          || result.status !== "failed_as_expected"
+          || !result.expectationMet
+        ) {
+          throw new LabDomainError(
+            "COMMAND_FAILED",
+            `Fixture ${scenario.id}@${scenario.version} did not produce the declared expected baseline failure.`,
+          );
+        }
         return [
           started,
           {
             ...eventMeta(context, 1),
             type: "BASELINE_FAILED_AS_EXPECTED",
             runId,
+            result,
           },
         ];
       }
@@ -182,6 +242,15 @@ export function createCommandService({
         ];
 
       case "RUN_CANDIDATE_SUITE": {
+        const scenario = requireScenario(stableState);
+        assertStagedFixturePatch(stableState);
+        if (!stableState.baselineResult) {
+          throw new LabDomainError(
+            "COMMAND_FAILED",
+            "The candidate suite cannot run without a verified baseline result.",
+          );
+        }
+        await verifyTrialRun(scenario, stableState.baselineResult);
         const runId = ids.nextRunId("candidate", stableState);
         const started: DomainEvent = {
           ...eventMeta(context, 0),
@@ -189,18 +258,20 @@ export function createCommandService({
           runId,
         };
         const runningState = reduceLabState(stableState, started);
-        await effects.runCandidateSuite({
+        const suite = await effects.runCandidateSuite({
           state: runningState,
           runId,
           ...(context.signal ? { signal: context.signal } : {}),
         });
         abortIfRequested(context);
+        await verifySuiteRun(scenario, suite);
         return [
           started,
           {
             ...eventMeta(context, 1),
             type: "CANDIDATE_SUITE_COMPLETED",
             runId,
+            suite,
           },
         ];
       }
@@ -263,6 +334,7 @@ export function createCommandService({
 
       try {
         const events = await buildEvents(command, context, stableState);
+        abortIfRequested(context);
         const nextState = reduceLabEvents(stableState, events);
         store.commit(nextState);
         const result: CommandResult = {

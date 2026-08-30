@@ -1,4 +1,6 @@
-export const LAB_STATE_SCHEMA_VERSION = 1 as const;
+import type { SuiteRun, TrialRun } from "../scenarios/types";
+
+export const LAB_STATE_SCHEMA_VERSION = 2 as const;
 
 export type ScenarioId = "completion" | "handoff" | "retry" | "authority";
 
@@ -24,6 +26,7 @@ export interface CandidatePatch {
   readonly id: string;
   readonly layer: string;
   readonly hypothesis: string;
+  readonly diff: readonly string[];
 }
 
 export interface HumanDecision {
@@ -54,6 +57,7 @@ export type DomainEvent =
   | (EventMeta & {
       readonly type: "BASELINE_FAILED_AS_EXPECTED";
       readonly runId: string;
+      readonly result: TrialRun;
     })
   | (EventMeta & {
       readonly type: "PATCH_STAGED";
@@ -66,6 +70,7 @@ export type DomainEvent =
   | (EventMeta & {
       readonly type: "CANDIDATE_SUITE_COMPLETED";
       readonly runId: string;
+      readonly suite: SuiteRun;
     })
   | (EventMeta & {
       readonly type: "CANDIDATE_PROMOTED";
@@ -84,6 +89,8 @@ export interface LabState {
   readonly revision: number;
   readonly baselineRunId: string | null;
   readonly candidateRunId: string | null;
+  readonly baselineResult: TrialRun | null;
+  readonly candidateSuiteResult: SuiteRun | null;
   readonly candidate: CandidatePatch | null;
   readonly decision: HumanDecision | null;
   readonly events: readonly DomainEvent[];
@@ -140,6 +147,8 @@ export function createInitialLabState(
     revision: 0,
     baselineRunId: null,
     candidateRunId: null,
+    baselineResult: null,
+    candidateSuiteResult: null,
     candidate: null,
     decision: null,
     events: [],

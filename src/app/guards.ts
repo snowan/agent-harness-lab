@@ -29,10 +29,16 @@ const runningPhases: readonly LabPhase[] = [
 
 function validatePatch(command: Extract<LabCommand, { type: "STAGE_PATCH" }>): void {
   const hypothesis = command.patch.hypothesis.trim();
-  if (!command.patch.id.trim() || !command.patch.layer.trim() || !hypothesis) {
+  if (
+    !command.patch.id.trim()
+    || !command.patch.layer.trim()
+    || !hypothesis
+    || command.patch.diff.length === 0
+    || command.patch.diff.some((line) => !line.trim())
+  ) {
     throw new LabDomainError(
       "INVALID_INPUT",
-      "The candidate patch needs an ID, harness layer, and causal hypothesis before it can be staged.",
+      "The candidate patch needs an ID, harness layer, reviewable diff, and causal hypothesis before it can be staged.",
     );
   }
   if (hypothesis.length > 280) {
