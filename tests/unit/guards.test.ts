@@ -6,6 +6,10 @@ import {
   type LabPhase,
   type LabState,
 } from "../../src/domain/types";
+import { runScenarioSuite } from "../../src/domain/evaluation";
+import { completionWithoutProofScenario } from "../../src/scenarios/completion-without-proof";
+
+const candidateSuite = await runScenarioSuite(completionWithoutProofScenario);
 
 const phases: readonly LabPhase[] = [
   "mission_loaded",
@@ -26,6 +30,7 @@ const patch = {
 };
 
 function stateAt(phase: LabPhase): LabState {
+  const hasComparison = ["compared", "promoted", "rejected"].includes(phase);
   return {
     ...createInitialLabState(),
     phase,
@@ -33,6 +38,7 @@ function stateAt(phase: LabPhase): LabState {
     candidate: ["patch_staged", "candidate_running", "compared", "promoted", "rejected"].includes(phase)
       ? patch
       : null,
+    candidateSuiteResult: hasComparison ? candidateSuite : null,
   };
 }
 
@@ -89,6 +95,29 @@ describe("command guards", () => {
         "human",
       ),
     ).toThrow(/Review the latest comparison/);
+  });
+
+  it("prevents promotion when the compared candidate suite failed", () => {
+    const compared = stateAt("compared");
+    const failed = {
+      ...compared,
+      candidateSuiteResult: compared.candidateSuiteResult
+        ? { ...compared.candidateSuiteResult, status: "failed" as const }
+        : null,
+    };
+
+    expect(() =>
+      assertCommandAllowed(
+        failed,
+        { type: "PROMOTE", comparedRevision: failed.revision },
+        "human",
+      ),
+    ).toThrow(/requires a passing candidate suite/);
+    expect(isCommandAllowed(
+      failed,
+      { type: "REJECT", comparedRevision: failed.revision },
+      "human",
+    )).toBe(true);
   });
 
   it("rejects an incomplete patch", () => {

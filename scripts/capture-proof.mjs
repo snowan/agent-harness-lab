@@ -4,9 +4,10 @@ import path from "node:path";
 import { chromium } from "@playwright/test";
 
 const proofId = process.argv[2];
+const supportedProofs = new Set(["pr-01", "pr-02", "pr-03"]);
 
-if (proofId !== "pr-01" && proofId !== "pr-02") {
-  throw new Error("Use `npm run proof:pr1` or `npm run proof:pr2`.");
+if (!supportedProofs.has(proofId)) {
+  throw new Error("Use `npm run proof:pr1`, `npm run proof:pr2`, or `npm run proof:pr3`.");
 }
 
 const root = process.cwd();
@@ -81,11 +82,13 @@ function monitorPage(page) {
 }
 
 async function assertHealthy(page, health) {
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - window.innerWidth,
-  );
-  if (overflow > 0) {
-    throw new Error(`Proof page has ${overflow}px of horizontal overflow.`);
+  const metrics = await page.evaluate(() => ({
+    viewport: window.innerWidth,
+    document: document.documentElement.scrollWidth,
+    body: document.body.scrollWidth,
+  }));
+  if (metrics.document > metrics.viewport || metrics.body > metrics.viewport) {
+    throw new Error(`Proof page overflowed: ${JSON.stringify(metrics)}.`);
   }
   if (health.consoleErrors.length || health.pageErrors.length) {
     throw new Error(
@@ -98,32 +101,124 @@ async function assertHealthy(page, health) {
 }
 
 async function preparePr1Page(page, missionId) {
-  await page.getByLabel("Choose a failure fixture").selectOption(missionId);
-  await page.getByRole("button", { name: "Load mission" }).click();
-  const heading = missionId === "handoff" ? "Broken context handoff" : "Authority drift";
-  await page.getByRole("heading", { name: heading }).waitFor();
+  const mission = missionId === "handoff"
+    ? { pattern: /H2.*Broken context handoff/, heading: "Broken context handoff" }
+    : { pattern: /A4.*Authority drift/, heading: "Authority drift" };
+  await page.getByRole("button", { name: mission.pattern }).click();
+  await page.getByRole("heading", { name: mission.heading }).waitFor();
+  const phase = await page.getByTestId("phase").textContent();
+  if (phase?.trim() !== "mission loaded") {
+    throw new Error(`PR1 proof expected mission loaded; received ${phase ?? "no phase"}.`);
+  }
 }
 
 async function preparePr2Page(page) {
   await page.getByRole("button", { name: "Run deterministic baseline" }).click();
-  const result = page.getByTestId("baseline-result");
-  await result.waitFor();
+  await page.waitForFunction(() =>
+    document.querySelector('[data-testid="phase"]')?.textContent?.trim() === "baseline failed"
+  );
   const phase = await page.getByTestId("phase").textContent();
-  const passed = await page.getByTestId("baseline-passed").textContent();
-  const failed = await page.getByTestId("baseline-failed").textContent();
-  const digest = await page.getByTestId("baseline-digest").textContent();
-  const evidence = await page.getByTestId("baseline-evidence-ref").textContent();
-  if (phase?.trim() !== "baseline failed") {
-    throw new Error(`Proof expected baseline failed; received ${phase ?? "no phase"}.`);
-  }
-  if (passed?.trim() !== "7/14" || failed?.trim() !== "7/14") {
-    throw new Error(`Proof received unexpected derived assertion counts ${passed}/${failed}.`);
+  const revision = await page.getByTestId("revision").textContent();
+  const baseline = page.locator('[aria-labelledby="baseline-trace-title"]');
+  const digest = await baseline.locator(".trace-digest").textContent();
+  const evidence = await baseline.textContent();
+  if (phase?.trim() !== "baseline failed" || !revision?.includes("Revision 2")) {
+    throw new Error(`PR2 proof expected baseline failed at revision 2; received ${phase}/${revision}.`);
   }
   if (!digest || !/^sha256:[0-9a-f]{64}$/.test(digest.trim())) {
-    throw new Error("Proof result is missing its canonical SHA-256 digest.");
+    throw new Error("PR2 proof is missing its canonical SHA-256 digest.");
   }
-  if (!evidence?.includes(":fact:artifact.browser_qa.loaded")) {
-    throw new Error("Proof result is missing its assertion-to-fact evidence reference.");
+  if (!evidence?.includes("completion.target.activation.browser-qa")) {
+    throw new Error("PR2 proof is missing its assertion-to-fact evidence reference.");
+  }
+}
+
+async function runPr3Comparison(page, paced = false) {
+  const pause = async (duration = 500) => {
+    if (paced) await page.waitForTimeout(duration);
+  };
+
+  await pause(700);
+  await page.getByRole("button", { name: "Run deterministic baseline" }).click();
+  await page.waitForFunction(() =>
+    document.querySelector('[data-testid="phase"]')?.textContent?.trim() === "baseline failed"
+  );
+  await pause();
+  if (paced) {
+    await page.getByRole("heading", { name: "Baseline trajectory" }).scrollIntoViewIfNeeded();
+    await pause(850);
+  }
+
+  await page.getByRole("button", { name: "Review candidate patch" }).click();
+  await page.getByLabel("Causal hypothesis").waitFor();
+  await pause();
+  if (paced) {
+    await page.locator(".diff").scrollIntoViewIfNeeded();
+    await pause(850);
+  }
+
+  await page.getByRole("button", { name: "Stage declared patch" }).click();
+  await page.getByRole("button", { name: "Run target + 2 sealed" }).waitFor();
+  await pause();
+
+  await page.getByRole("button", { name: "Run target + 2 sealed" }).click();
+  await page.getByRole("table").waitFor();
+  await pause(900);
+
+  const phase = await page.getByTestId("phase").textContent();
+  const revision = await page.getByTestId("revision").textContent();
+  const rows = await page.getByRole("table").locator("tbody tr").count();
+  const sealed = await page.locator(".sealed-card").count();
+  const promoteEnabled = await page.getByRole("button", { name: "Promote", exact: true }).isEnabled();
+  if (
+    phase?.trim() !== "compared"
+    || !revision?.includes("Revision 5")
+    || rows !== 5
+    || sealed !== 2
+    || !promoteEnabled
+  ) {
+    throw new Error(
+      `PR3 proof expected compared revision 5 with five signals, two sealed trials, and an enabled human decision; received ${phase}/${revision}/${rows}/${sealed}/${promoteEnabled}.`,
+    );
+  }
+}
+
+async function recordPr3Decision(page) {
+  await page.locator(".runtime-pill").click();
+  const dialog = page.getByRole("dialog", { name: "Agent-facing tool contracts" });
+  await dialog.waitFor();
+  if (await dialog.locator(".contract").count() !== 8) {
+    throw new Error("PR3 proof expected eight planned WebMCP contract previews.");
+  }
+  await page.waitForTimeout(900);
+  await dialog.getByRole("button", { name: "Close tool contracts" }).click();
+
+  const promote = page.getByRole("button", { name: "Promote", exact: true });
+  await promote.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(650);
+  await promote.click();
+  const heading = page.getByRole("heading", { name: "Candidate promoted by human" });
+  await heading.waitFor();
+  await heading.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(1_000);
+
+  const phase = await page.getByTestId("phase").textContent();
+  const revision = await page.getByTestId("revision").textContent();
+  const decision = await heading.locator("..").textContent();
+  if (
+    phase?.trim() !== "promoted"
+    || !revision?.includes("Revision 6")
+    || !decision?.includes("compared revision 5")
+  ) {
+    throw new Error(`PR3 proof recorded an unexpected decision state: ${phase}/${revision}/${decision}.`);
+  }
+}
+
+async function preparePr3Page(page, promote) {
+  await runPr3Comparison(page);
+  if (promote) {
+    await page.getByRole("button", { name: "Promote", exact: true }).click();
+    await page.getByRole("heading", { name: "Candidate promoted by human" }).waitFor();
   }
 }
 
@@ -132,8 +227,10 @@ async function preparePage(page, variant) {
   await page.goto(appUrl);
   if (proofId === "pr-01") {
     await preparePr1Page(page, variant === "mobile" ? "authority" : "handoff");
-  } else {
+  } else if (proofId === "pr-02") {
     await preparePr2Page(page);
+  } else {
+    await preparePr3Page(page, variant === "mobile");
   }
   await assertHealthy(page, health);
 }
@@ -148,21 +245,32 @@ try {
   const page = await context.newPage();
   const videoHealth = monitorPage(page);
   await page.goto(appUrl);
-  await page.waitForTimeout(550);
   if (proofId === "pr-01") {
+    await page.waitForTimeout(550);
     await preparePr1Page(page, "handoff");
-  } else {
+    await page.waitForTimeout(1_400);
+  } else if (proofId === "pr-02") {
+    await page.waitForTimeout(550);
     await preparePr2Page(page);
-    await page.getByTestId("baseline-evidence-ref").scrollIntoViewIfNeeded();
+    await page.locator('[aria-labelledby="baseline-trace-title"]').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(1_400);
+  } else {
+    await runPr3Comparison(page, true);
+    await page.getByRole("table").scrollIntoViewIfNeeded();
+    await page.waitForTimeout(900);
+    await recordPr3Decision(page);
   }
-  await page.waitForTimeout(1_400);
   await assertHealthy(page, videoHealth);
   await context.close();
 
   const videos = (await readdir(videoDir)).filter((file) => file.endsWith(".webm"));
   const video = videos[0];
   if (!video) throw new Error("Playwright did not produce a video file.");
-  const videoName = proofId === "pr-01" ? "app-shell.webm" : "baseline-engine.webm";
+  const videoName = proofId === "pr-01"
+    ? "app-shell.webm"
+    : proofId === "pr-02"
+      ? "baseline-engine.webm"
+      : "human-decision-flow.webm";
   await copyFile(path.join(videoDir, video), path.join(outputDir, videoName));
 
   const desktopContext = await browser.newContext({
@@ -173,7 +281,11 @@ try {
   await desktopPage.screenshot({
     path: path.join(
       outputDir,
-      proofId === "pr-01" ? "app-shell.png" : "baseline-engine-desktop.png",
+      proofId === "pr-01"
+        ? "app-shell.png"
+        : proofId === "pr-02"
+          ? "baseline-engine-desktop.png"
+          : "human-decision-evidence-desktop.png",
     ),
     fullPage: true,
   });
@@ -189,7 +301,11 @@ try {
   await mobilePage.screenshot({
     path: path.join(
       outputDir,
-      proofId === "pr-01" ? "app-shell-mobile.png" : "baseline-engine-mobile-320.png",
+      proofId === "pr-01"
+        ? "app-shell-mobile.png"
+        : proofId === "pr-02"
+          ? "baseline-engine-mobile-320.png"
+          : "human-decision-mobile-320.png",
     ),
     fullPage: true,
   });

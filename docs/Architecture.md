@@ -217,12 +217,10 @@ stateDiagram-v2
     [*] --> mission_loaded
     mission_loaded --> baseline_running: RUN_BASELINE
     baseline_running --> baseline_failed: expected fixture result
-    baseline_running --> mission_loaded: runtime error
     baseline_failed --> patch_staged: STAGE_PATCH
     patch_staged --> candidate_running: RUN_CANDIDATE_SUITE
     candidate_running --> compared: target and sealed results recorded
-    candidate_running --> patch_staged: runtime error
-    compared --> promoted: PROMOTE [human only]
+    compared --> promoted: PROMOTE [human only, suite passed]
     compared --> rejected: REJECT [human only]
     promoted --> mission_loaded: LOAD_MISSION or RESET
     rejected --> mission_loaded: LOAD_MISSION or RESET
@@ -235,9 +233,10 @@ stateDiagram-v2
 
 - `LOAD_MISSION` is legal from any stable state and creates a new workspace revision.
 - Only one command may run at a time. A transient run lock rejects concurrent commands.
-- A runtime error appends an error event but restores the last stable state.
+- The running phases are transient command-service state. A runtime error commits no domain event and leaves the canonical store at the exact prior stable revision; the calling adapter owns bounded pending and error status.
 - `COMPARE` is represented by the completed `compared` state; reading comparison is a selector, not a mutation.
 - `PROMOTE` and `REJECT` require actor `human` and an unchanged compared revision.
+- `PROMOTE` additionally requires a passing candidate suite; a failed comparison may only be rejected.
 - Decisions are terminal for that candidate. A new candidate begins with a reset or mission reload in the MVP.
 
 ## 9. Command architecture
@@ -258,7 +257,7 @@ dispatch(command: LabCommand, context: CommandContext): Promise<CommandResult>
 | `RUN_BASELINE` | Yes | Yes | `mission_loaded` | `baseline_failed` |
 | `STAGE_PATCH` | Yes | Yes | `baseline_failed` | `patch_staged` |
 | `RUN_CANDIDATE_SUITE` | Yes | Yes | `patch_staged` | `compared` |
-| `PROMOTE` | Yes | No | `compared` | `promoted` |
+| `PROMOTE` | Yes | No | `compared` with passing suite | `promoted` |
 | `REJECT` | Yes | No | `compared` | `rejected` |
 | `RESET` | Yes | No | Any stable state | `mission_loaded` |
 
@@ -288,7 +287,7 @@ sequenceDiagram
     end
 ```
 
-Inputs are validated before the domain transition. A command either commits one stable revision or commits nothing. UI loading indicators are adapter state, not evidence that a domain run completed.
+Inputs are validated before the domain transition. A command either commits one stable revision or commits nothing. UI loading and error indicators are transient adapter state, not canonical provenance and not evidence that a domain run completed. PR 4 may expose bounded adapter activity for WebMCP usability, but it must remain distinct from the successful domain event log and evidence receipt.
 
 ## 10. End-to-end collaboration flow
 

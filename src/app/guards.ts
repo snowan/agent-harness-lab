@@ -94,6 +94,16 @@ export function assertCommandAllowed(
       `${command.type} cannot run while the workspace is ${state.phase}. Continue from ${expected}.`,
     );
   }
+
+  if (
+    command.type === "PROMOTE"
+    && state.candidateSuiteResult?.status !== "passed"
+  ) {
+    throw new LabDomainError(
+      "ILLEGAL_TRANSITION",
+      "PROMOTE requires a passing candidate suite. Review the failed comparison and use the human rejection control.",
+    );
+  }
 }
 
 export function isCommandAllowed(

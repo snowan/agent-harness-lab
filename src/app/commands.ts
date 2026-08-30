@@ -136,19 +136,15 @@ function requireScenario(state: LabState) {
   return scenario;
 }
 
-function assertStagedFixturePatch(state: LabState): void {
+function assertFixturePatchIdentity(
+  state: LabState,
+  patch: NonNullable<LabState["candidate"]>,
+): void {
   const scenario = requireScenario(state);
-  const stagedPatch = state.candidate;
-  if (!stagedPatch) {
-    throw new LabDomainError(
-      "INVALID_INPUT",
-      "The candidate suite requires a staged fixture patch.",
-    );
-  }
   const stagedIdentity = {
-    id: stagedPatch.id,
-    layer: stagedPatch.layer,
-    diff: stagedPatch.diff,
+    id: patch.id,
+    layer: patch.layer,
+    diff: patch.diff,
   };
   const fixtureIdentity = {
     id: scenario.candidate.patch.id,
@@ -158,9 +154,20 @@ function assertStagedFixturePatch(state: LabState): void {
   if (canonicalJson(stagedIdentity) !== canonicalJson(fixtureIdentity)) {
     throw new LabDomainError(
       "INVALID_INPUT",
-      `The staged patch does not match ${scenario.candidate.patch.id}. Reset the mission and stage the declared fixture patch.`,
+      `The patch does not match ${scenario.candidate.patch.id}. Keep the declared ID, layer, and diff; only the causal hypothesis is editable.`,
     );
   }
+}
+
+function assertStagedFixturePatch(state: LabState): void {
+  const stagedPatch = state.candidate;
+  if (!stagedPatch) {
+    throw new LabDomainError(
+      "INVALID_INPUT",
+      "The candidate suite requires a staged fixture patch.",
+    );
+  }
+  assertFixturePatchIdentity(state, stagedPatch);
 }
 
 export function createCommandService({
@@ -233,6 +240,7 @@ export function createCommandService({
       }
 
       case "STAGE_PATCH":
+        assertFixturePatchIdentity(stableState, command.patch);
         return [
           {
             ...eventMeta(context, 0),

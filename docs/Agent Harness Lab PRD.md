@@ -183,7 +183,7 @@ The candidate suite shows the skill activating, the overflow being detected and 
 
 | ID | Requirement | Acceptance condition |
 | --- | --- | --- |
-| FR-601 | Promote and Reject controls must be available only after comparison. | Controls are disabled in earlier states. |
+| FR-601 | Promote and Reject controls must be available only after comparison; promotion additionally requires a passing candidate suite. | Controls are disabled in earlier states, and a failed comparison exposes rejection only. |
 | FR-602 | Promotion and rejection must be UI-only and attributed to `human`. | No WebMCP contract or executor can perform either action. |
 | FR-603 | A decision must preserve the evaluated evidence rather than erase the run. | The reviewer can inspect the same comparison after deciding. |
 | FR-604 | The app must export a versioned JSON evidence receipt. | Receipt schema validation passes and includes provenance and limitations. |
@@ -259,7 +259,7 @@ The canonical states are:
 - `promoted`
 - `rejected`
 
-Runtime errors do not create an acceptance state. They append a bounded error event and return to the last stable state. Loading a mission begins a new workspace state. A decision is terminal for that candidate, but its evidence remains inspectable.
+Runtime errors do not create an acceptance state or canonical domain event. They leave the exact prior stable revision unchanged while the calling UI or adapter presents bounded transient error status. Loading a mission begins a new workspace state. A decision is terminal for that candidate, but its evidence remains inspectable.
 
 The [architecture document](Architecture.md) owns the exact transition and command contracts.
 
