@@ -1,0 +1,24 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "Agent Harness Lab": {
+      "versions": [
+        {
+          "path": "Agent Harness Lab.html",
+          "createdAt": "2026-08-30T21:11:10.033Z",
+          "status": "needs-review",
+          "subtitle": "Eval-gated WebMCP workbench for harness changes",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          },
+          "section": "Challenge product mockup"
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-08-30T21:11:10.034Z",
+  "updatedAt": "2026-08-30T21:14:02.731Z"
+}

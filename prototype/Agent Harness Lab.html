@@ -1,0 +1,2874 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Agent Harness Lab is a browser-native workbench for reproducing agent failures, staging harness patches, running deterministic evaluations, and making human promotion decisions.">
+  <meta name="theme-color" content="#06100e">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="data:,">
+  <title>Agent Harness Lab · Prove the change</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #06100e;
+      --surface: #0a1714;
+      --surface-soft: #0b1d19;
+      --surface-raised: #10251f;
+      --surface-bright: #143027;
+      --ink: #e9fff4;
+      --muted: #91aa9e;
+      --faint: #658078;
+      --border: #1b4238;
+      --border-strong: #2b6655;
+      --primary: #68ffb5;
+      --primary-soft: rgb(104 255 181 / 0.12);
+      --secondary: #57cfff;
+      --secondary-soft: rgb(87 207 255 / 0.12);
+      --warning: #ffd37d;
+      --warning-soft: rgb(255 211 125 / 0.13);
+      --danger: #ff887c;
+      --danger-soft: rgb(255 136 124 / 0.13);
+      --violet: #c7a6ff;
+      --violet-soft: rgb(199 166 255 / 0.12);
+      --focus: #57cfff;
+      --sans: "Avenir Next", "SF Pro Display", "Segoe UI", Arial, sans-serif;
+      --body: "Avenir Next", "SF Pro Text", "Segoe UI", Arial, sans-serif;
+      --mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+      --max: 1560px;
+      --reading: 72ch;
+      --shadow: 0 28px 85px rgb(0 0 0 / 0.38);
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      min-width: 320px;
+      scroll-behavior: smooth;
+      scroll-padding-top: 5.5rem;
+      background: var(--bg);
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      overflow-x: hidden;
+      background:
+        linear-gradient(rgb(104 255 181 / 0.026) 1px, transparent 1px),
+        linear-gradient(90deg, rgb(104 255 181 / 0.026) 1px, transparent 1px),
+        var(--bg);
+      background-size: 32px 32px;
+      color: var(--ink);
+      font-family: var(--body);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      position: fixed;
+      z-index: -1;
+      inset: -22vh -18vw auto auto;
+      width: min(74vw, 900px);
+      height: min(74vw, 900px);
+      border-radius: 50%;
+      background: radial-gradient(circle, rgb(87 207 255 / 0.075), transparent 67%);
+      content: "";
+      pointer-events: none;
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      color: inherit;
+      font: inherit;
+    }
+
+    button { touch-action: manipulation; }
+    button:not(:disabled), a, summary { cursor: pointer; }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.42;
+    }
+
+    [hidden] { display: none !important; }
+
+    a {
+      color: var(--secondary);
+      text-decoration-thickness: 0.08em;
+      text-underline-offset: 0.23em;
+    }
+
+    a:hover { text-decoration-thickness: 0.14em; }
+
+    :is(a, button, summary, input, textarea, [tabindex]):focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 3px;
+    }
+
+    .skip-link {
+      position: fixed;
+      z-index: 1200;
+      top: -6rem;
+      left: 1rem;
+      min-height: 44px;
+      padding: 0.7rem 1rem;
+      border: 1px solid var(--primary);
+      background: var(--surface);
+      color: var(--primary);
+      font-family: var(--mono);
+    }
+
+    .skip-link:focus { top: 1rem; }
+
+    .sr-only {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      border: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+    }
+
+    .eyebrow,
+    .label,
+    .micro,
+    .badge,
+    .status-pill,
+    .tool-chip,
+    .metric-label {
+      font-family: var(--mono);
+      letter-spacing: 0.075em;
+      text-transform: uppercase;
+    }
+
+    .site-header {
+      position: sticky;
+      z-index: 100;
+      top: 0;
+      border-bottom: 1px solid rgb(43 102 85 / 0.78);
+      background: rgb(6 16 14 / 0.91);
+      backdrop-filter: blur(18px);
+    }
+
+    .header-inner {
+      display: flex;
+      width: min(100% - 2rem, var(--max));
+      min-height: 4.25rem;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin: 0 auto;
+    }
+
+    .brand {
+      display: inline-flex;
+      min-width: 0;
+      align-items: center;
+      gap: 0.72rem;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      display: inline-grid;
+      width: 2.1rem;
+      height: 2.1rem;
+      flex: 0 0 auto;
+      place-items: center;
+      border: 1px solid var(--primary);
+      background: var(--primary);
+      color: var(--bg);
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      font-weight: 900;
+    }
+
+    .brand-copy {
+      display: grid;
+      min-width: 0;
+      gap: 0;
+      line-height: 1.08;
+    }
+
+    .brand-copy strong {
+      overflow: hidden;
+      font-size: 0.82rem;
+      letter-spacing: 0.085em;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .brand-copy small {
+      overflow: hidden;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .header-actions,
+    .site-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .site-nav a {
+      min-height: 44px;
+      padding: 0.78rem 0.66rem;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.66rem;
+      text-decoration: none;
+      text-transform: uppercase;
+    }
+
+    .site-nav a:hover { color: var(--ink); }
+
+    .runtime-pill {
+      display: inline-flex;
+      min-height: 2.15rem;
+      align-items: center;
+      gap: 0.48rem;
+      padding: 0.38rem 0.65rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      white-space: nowrap;
+    }
+
+    .runtime-pill[data-ready="true"] {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .runtime-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background: var(--warning);
+      box-shadow: 0 0 0 4px var(--warning-soft);
+    }
+
+    .runtime-pill[data-ready="true"] .runtime-dot {
+      background: var(--primary);
+      box-shadow: 0 0 0 4px var(--primary-soft);
+    }
+
+    .page-shell {
+      width: min(100% - 2rem, var(--max));
+      margin: 0 auto;
+      padding: 2.3rem 0 4rem;
+    }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 2rem;
+      padding: 0.5rem 0 2rem;
+    }
+
+    .intro-copy { min-width: 0; }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      margin: 0 0 0.65rem;
+      color: var(--primary);
+      font-size: 0.68rem;
+    }
+
+    .eyebrow::before {
+      width: 2.25rem;
+      height: 1px;
+      background: currentColor;
+      content: "";
+    }
+
+    h1,
+    h2,
+    h3,
+    p { margin-top: 0; }
+
+    h1 {
+      max-width: 1040px;
+      margin-bottom: 0.75rem;
+      font-family: var(--sans);
+      font-size: clamp(2rem, 4.7vw, 4.65rem);
+      font-weight: 760;
+      letter-spacing: -0.055em;
+      line-height: 0.98;
+    }
+
+    .intro p {
+      max-width: 76ch;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: clamp(0.98rem, 1.4vw, 1.13rem);
+    }
+
+    .intro-proof {
+      display: grid;
+      min-width: 248px;
+      gap: 0.5rem;
+      padding: 1rem;
+      border: 1px solid var(--border);
+      background: linear-gradient(135deg, var(--surface), rgb(11 29 25 / 0.64));
+      box-shadow: var(--shadow);
+    }
+
+    .intro-proof strong {
+      color: var(--primary);
+      font-family: var(--mono);
+      font-size: 1.75rem;
+      line-height: 1;
+    }
+
+    .intro-proof span {
+      max-width: 26ch;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .intro-proof .micro {
+      color: var(--faint);
+      font-size: 0.6rem;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 265px minmax(0, 1fr) 300px;
+      min-width: 0;
+      border: 1px solid var(--border-strong);
+      background: rgb(6 16 14 / 0.72);
+      box-shadow: var(--shadow);
+    }
+
+    .mission-rail,
+    .review-rail,
+    .run-panel {
+      min-width: 0;
+    }
+
+    .mission-rail {
+      border-right: 1px solid var(--border);
+      background: rgb(10 23 20 / 0.76);
+    }
+
+    .review-rail {
+      border-left: 1px solid var(--border);
+      background: rgb(10 23 20 / 0.76);
+    }
+
+    .rail-section {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .rail-section:last-child { border-bottom: 0; }
+
+    .rail-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.8rem;
+    }
+
+    .rail-heading h2,
+    .rail-heading h3 {
+      margin: 0;
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .count {
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 0.62rem;
+    }
+
+    .mission-list {
+      display: grid;
+      gap: 0.55rem;
+    }
+
+    .mission-card {
+      display: grid;
+      width: 100%;
+      min-height: 72px;
+      grid-template-columns: 2rem minmax(0, 1fr);
+      gap: 0.65rem;
+      padding: 0.72rem;
+      border: 1px solid var(--border);
+      border-left: 3px solid transparent;
+      background: var(--surface-soft);
+      text-align: left;
+    }
+
+    .mission-card:hover {
+      border-color: var(--border-strong);
+      background: var(--surface-raised);
+    }
+
+    .mission-card[aria-pressed="true"] {
+      border-color: var(--primary);
+      border-left-color: var(--primary);
+      background: var(--primary-soft);
+    }
+
+    .mission-code {
+      display: grid;
+      width: 2rem;
+      height: 2rem;
+      place-items: center;
+      border: 1px solid var(--border-strong);
+      color: var(--secondary);
+      font-family: var(--mono);
+      font-size: 0.66rem;
+      font-weight: 800;
+    }
+
+    .mission-card[aria-pressed="true"] .mission-code {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .mission-card-copy {
+      display: grid;
+      min-width: 0;
+      gap: 0.15rem;
+    }
+
+    .mission-card-copy strong {
+      font-size: 0.8rem;
+      line-height: 1.25;
+    }
+
+    .mission-card-copy small {
+      overflow: hidden;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.57rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .layer-stack {
+      display: grid;
+      gap: 0.38rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .layer-stack li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.65rem;
+      padding: 0.48rem 0.55rem;
+      border: 1px solid transparent;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.61rem;
+    }
+
+    .layer-stack li::after {
+      width: 0.42rem;
+      height: 0.42rem;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--border-strong);
+      content: "";
+    }
+
+    .layer-stack li[data-active="true"] {
+      border-color: var(--violet);
+      background: var(--violet-soft);
+      color: var(--ink);
+    }
+
+    .layer-stack li[data-active="true"]::after {
+      background: var(--violet);
+      box-shadow: 0 0 0 4px var(--violet-soft);
+    }
+
+    .fixture-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+
+    .fixture-note strong { color: var(--warning); }
+
+    .run-panel {
+      background: linear-gradient(180deg, rgb(10 23 20 / 0.86), rgb(6 16 14 / 0.9));
+    }
+
+    .run-header {
+      display: grid;
+      gap: 0.85rem;
+      padding: 1rem 1.1rem 0;
+      border-bottom: 1px solid var(--border);
+      background: rgb(10 23 20 / 0.88);
+    }
+
+    .run-header-top {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .run-title {
+      display: grid;
+      min-width: 0;
+      gap: 0.12rem;
+    }
+
+    .run-title .micro {
+      color: var(--primary);
+      font-size: 0.58rem;
+    }
+
+    .run-title h2 {
+      overflow: hidden;
+      margin: 0;
+      font-size: 1rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .run-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 0.45rem;
+    }
+
+    .button {
+      display: inline-flex;
+      min-height: 42px;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      padding: 0.58rem 0.75rem;
+      border: 1px solid var(--border-strong);
+      border-radius: 0;
+      background: var(--surface-raised);
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 0.64rem;
+      font-weight: 700;
+      letter-spacing: 0.025em;
+    }
+
+    .button:hover:not(:disabled) {
+      border-color: var(--secondary);
+      color: var(--secondary);
+    }
+
+    .button.primary {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: var(--bg);
+    }
+
+    .button.primary:hover:not(:disabled) {
+      background: #a4ffd0;
+      color: var(--bg);
+    }
+
+    .button.danger {
+      border-color: var(--danger);
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .button.ghost { background: transparent; }
+
+    .button.icon {
+      width: 42px;
+      padding: 0;
+    }
+
+    .tabs {
+      display: flex;
+      min-width: 0;
+      gap: 0.15rem;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
+    .tab {
+      min-height: 42px;
+      padding: 0.65rem 0.8rem;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .tab[aria-selected="true"] {
+      border-bottom-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .run-view {
+      min-width: 0;
+      padding: 1rem 1.1rem 1.25rem;
+    }
+
+    .scenario-brief {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 0.48fr);
+      gap: 0.75rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .brief-card,
+    .panel-card {
+      min-width: 0;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .brief-card {
+      padding: 0.8rem 0.9rem;
+    }
+
+    .brief-card .label {
+      display: block;
+      margin-bottom: 0.35rem;
+      color: var(--faint);
+      font-size: 0.56rem;
+    }
+
+    .brief-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .brief-card strong { color: var(--ink); }
+
+    .brief-card.invariant {
+      border-left: 3px solid var(--warning);
+      background: var(--warning-soft);
+    }
+
+    .timeline-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0.75rem;
+      min-width: 0;
+    }
+
+    .timeline-panel {
+      min-width: 0;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .timeline-panel[data-tone="baseline"] { border-top: 3px solid var(--danger); }
+    .timeline-panel[data-tone="candidate"] { border-top: 3px solid var(--primary); }
+    .timeline-panel[data-tone="locked"] { border-top: 3px solid var(--border-strong); }
+
+    .timeline-head {
+      display: flex;
+      min-height: 58px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.7rem;
+      padding: 0.7rem 0.8rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .timeline-head h3 {
+      margin: 0;
+      font-size: 0.78rem;
+    }
+
+    .timeline-head small {
+      display: block;
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 0.56rem;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      min-height: 1.7rem;
+      align-items: center;
+      padding: 0.28rem 0.46rem;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.54rem;
+      white-space: nowrap;
+    }
+
+    .status-pill.fail {
+      border-color: var(--danger);
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .status-pill.pass {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+
+    .status-pill.pending {
+      border-color: var(--warning);
+      background: var(--warning-soft);
+      color: var(--warning);
+    }
+
+    .events {
+      display: grid;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .event {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: 3.1rem 0.75rem minmax(0, 1fr);
+      gap: 0.5rem;
+      padding: 0.68rem 0.78rem;
+      border-bottom: 1px solid rgb(27 66 56 / 0.76);
+    }
+
+    .event:last-child { border-bottom: 0; }
+
+    .event-time {
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 0.57rem;
+    }
+
+    .event-dot {
+      width: 0.62rem;
+      height: 0.62rem;
+      margin-top: 0.17rem;
+      border: 2px solid var(--border-strong);
+      border-radius: 50%;
+      background: var(--surface);
+    }
+
+    .event[data-status="ok"] .event-dot {
+      border-color: var(--primary);
+      background: var(--primary);
+    }
+
+    .event[data-status="warn"] .event-dot {
+      border-color: var(--warning);
+      background: var(--warning);
+    }
+
+    .event[data-status="fail"] .event-dot {
+      border-color: var(--danger);
+      background: var(--danger);
+      box-shadow: 0 0 0 4px var(--danger-soft);
+    }
+
+    .event-copy {
+      min-width: 0;
+    }
+
+    .event-copy strong {
+      display: block;
+      margin-bottom: 0.15rem;
+      font-size: 0.72rem;
+      line-height: 1.3;
+    }
+
+    .event-copy span {
+      display: block;
+      overflow-wrap: anywhere;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.59rem;
+      line-height: 1.45;
+    }
+
+    .locked-state {
+      display: grid;
+      min-height: 286px;
+      place-items: center;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .locked-state-inner {
+      max-width: 31ch;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .lock-glyph {
+      display: grid;
+      width: 3rem;
+      height: 3rem;
+      place-items: center;
+      margin: 0 auto 0.75rem;
+      border: 1px dashed var(--border-strong);
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+    }
+
+    .evidence-callout {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 0.7rem;
+      margin-bottom: 0.85rem;
+      padding: 0.8rem;
+      border: 1px solid var(--secondary);
+      background: var(--secondary-soft);
+    }
+
+    .evidence-callout .symbol {
+      color: var(--secondary);
+      font-family: var(--mono);
+      font-size: 1rem;
+      font-weight: 900;
+    }
+
+    .evidence-callout p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.76rem;
+    }
+
+    .evidence-callout strong { color: var(--ink); }
+
+    .table-wrap {
+      min-width: 0;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    table {
+      width: 100%;
+      min-width: 640px;
+      border-collapse: collapse;
+      font-size: 0.72rem;
+    }
+
+    th,
+    td {
+      padding: 0.72rem 0.78rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    th {
+      background: var(--surface-soft);
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    td.metric-name {
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    td.metric-value {
+      width: 92px;
+      font-family: var(--mono);
+      font-weight: 800;
+    }
+
+    td.metric-value.baseline { color: var(--danger); }
+    td.metric-value.candidate { color: var(--primary); }
+    td.metric-detail { color: var(--muted); }
+
+    .checks-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.65rem;
+      margin-top: 0.75rem;
+    }
+
+    .check-card {
+      min-width: 0;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .check-card .badge {
+      display: inline-flex;
+      margin-bottom: 0.45rem;
+      color: var(--secondary);
+      font-size: 0.54rem;
+    }
+
+    .check-card strong {
+      display: block;
+      margin-bottom: 0.25rem;
+      font-size: 0.72rem;
+    }
+
+    .check-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.66rem;
+    }
+
+    .check-card[data-status="pass"] {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+    }
+
+    .check-card[data-status="locked"] {
+      border-style: dashed;
+      opacity: 0.72;
+    }
+
+    .patch-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(240px, 0.45fr);
+      gap: 0.75rem;
+    }
+
+    .patch-card,
+    .causal-card {
+      min-width: 0;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .panel-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.7rem;
+      padding: 0.7rem 0.8rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-card-head h3 {
+      margin: 0;
+      font-size: 0.76rem;
+    }
+
+    .diff {
+      margin: 0;
+      padding: 0.5rem 0;
+      overflow-x: auto;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    .diff-line {
+      display: block;
+      min-width: max-content;
+      padding: 0.18rem 0.8rem;
+    }
+
+    .diff-line.add {
+      border-left: 3px solid var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+
+    .diff-line.remove {
+      border-left: 3px solid var(--danger);
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .diff-line.context { color: var(--faint); }
+
+    .causal-body {
+      display: grid;
+      gap: 0.75rem;
+      padding: 0.8rem;
+    }
+
+    .causal-step {
+      position: relative;
+      padding: 0 0 0.75rem 1.4rem;
+      border-left: 1px solid var(--border-strong);
+    }
+
+    .causal-step:last-child {
+      padding-bottom: 0;
+      border-left-color: transparent;
+    }
+
+    .causal-step::before {
+      position: absolute;
+      top: 0.12rem;
+      left: -0.28rem;
+      width: 0.52rem;
+      height: 0.52rem;
+      border-radius: 50%;
+      background: var(--violet);
+      content: "";
+    }
+
+    .causal-step strong {
+      display: block;
+      margin-bottom: 0.13rem;
+      font-size: 0.68rem;
+    }
+
+    .causal-step span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.63rem;
+    }
+
+    .workflow {
+      display: grid;
+      gap: 0;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .workflow-step {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1.7rem minmax(0, 1fr);
+      gap: 0.62rem;
+      min-height: 54px;
+      padding-bottom: 0.68rem;
+    }
+
+    .workflow-step:last-child {
+      min-height: auto;
+      padding-bottom: 0;
+    }
+
+    .workflow-step:not(:last-child)::after {
+      position: absolute;
+      top: 1.65rem;
+      bottom: 0.12rem;
+      left: 0.82rem;
+      width: 1px;
+      background: var(--border-strong);
+      content: "";
+    }
+
+    .workflow-index {
+      display: grid;
+      width: 1.7rem;
+      height: 1.7rem;
+      place-items: center;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      font-weight: 800;
+    }
+
+    .workflow-step[data-status="done"] .workflow-index {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: var(--bg);
+    }
+
+    .workflow-step[data-status="active"] .workflow-index {
+      border-color: var(--warning);
+      background: var(--warning-soft);
+      color: var(--warning);
+      box-shadow: 0 0 0 4px var(--warning-soft);
+    }
+
+    .workflow-copy {
+      display: grid;
+      gap: 0.08rem;
+      padding-top: 0.12rem;
+    }
+
+    .workflow-copy strong {
+      font-size: 0.68rem;
+      line-height: 1.2;
+    }
+
+    .workflow-copy small {
+      color: var(--muted);
+      font-size: 0.59rem;
+      line-height: 1.35;
+    }
+
+    .candidate-summary {
+      display: grid;
+      gap: 0.65rem;
+    }
+
+    .empty-candidate {
+      padding: 0.8rem;
+      border: 1px dashed var(--border-strong);
+      color: var(--muted);
+      font-size: 0.68rem;
+    }
+
+    .candidate-box {
+      padding: 0.75rem;
+      border: 1px solid var(--violet);
+      background: var(--violet-soft);
+    }
+
+    .candidate-box .badge {
+      display: block;
+      margin-bottom: 0.35rem;
+      color: var(--violet);
+      font-size: 0.54rem;
+    }
+
+    .candidate-box strong {
+      display: block;
+      margin-bottom: 0.25rem;
+      font-size: 0.73rem;
+    }
+
+    .candidate-box p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.64rem;
+    }
+
+    .decision-box {
+      padding: 0.78rem;
+      border: 1px solid var(--warning);
+      background: var(--warning-soft);
+    }
+
+    .decision-box[data-state="promoted"] {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+    }
+
+    .decision-box[data-state="rejected"] {
+      border-color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .decision-box h3 {
+      margin-bottom: 0.32rem;
+      font-size: 0.74rem;
+    }
+
+    .decision-box p {
+      margin-bottom: 0.72rem;
+      color: var(--muted);
+      font-size: 0.65rem;
+    }
+
+    .decision-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.45rem;
+    }
+
+    .export-button {
+      width: 100%;
+      margin-top: 0.45rem;
+    }
+
+    .activity-list {
+      display: grid;
+      max-height: 190px;
+      gap: 0.55rem;
+      margin: 0;
+      padding: 0;
+      overflow: auto;
+      list-style: none;
+      scrollbar-width: thin;
+    }
+
+    .activity-item {
+      display: grid;
+      grid-template-columns: 0.48rem minmax(0, 1fr);
+      gap: 0.5rem;
+      color: var(--muted);
+      font-size: 0.61rem;
+    }
+
+    .activity-item::before {
+      width: 0.44rem;
+      height: 0.44rem;
+      margin-top: 0.24rem;
+      border-radius: 50%;
+      background: var(--secondary);
+      content: "";
+    }
+
+    .activity-item[data-actor="human"]::before { background: var(--warning); }
+    .activity-item[data-actor="system"]::before { background: var(--faint); }
+
+    .activity-item strong {
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 0.57rem;
+      text-transform: uppercase;
+    }
+
+    .tool-surface {
+      margin-top: 1rem;
+      border: 1px solid var(--border-strong);
+      background: rgb(10 23 20 / 0.84);
+      box-shadow: var(--shadow);
+    }
+
+    .tool-surface-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tool-surface-head h2 {
+      margin: 0;
+      font-size: 0.8rem;
+    }
+
+    .tool-surface-head p {
+      max-width: 70ch;
+      margin: 0.2rem 0 0;
+      color: var(--muted);
+      font-size: 0.7rem;
+    }
+
+    .tool-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--border);
+    }
+
+    .tool-chip {
+      display: grid;
+      min-height: 66px;
+      min-width: 0;
+      align-content: center;
+      gap: 0.2rem;
+      padding: 0.75rem;
+      border: 0;
+      background: var(--surface);
+      color: var(--secondary);
+      text-align: left;
+    }
+
+    .tool-chip:hover {
+      background: var(--secondary-soft);
+      color: var(--ink);
+    }
+
+    .tool-chip strong {
+      overflow: hidden;
+      font-size: 0.59rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tool-chip span {
+      color: var(--muted);
+      font-family: var(--body);
+      font-size: 0.6rem;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .human-boundary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      padding: 0.75rem 1rem;
+      border-top: 1px solid var(--warning);
+      background: var(--warning-soft);
+      color: var(--warning);
+      font-family: var(--mono);
+      font-size: 0.64rem;
+      text-align: center;
+    }
+
+    .method {
+      display: grid;
+      grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+      gap: 1rem;
+      margin-top: 1rem;
+      padding: 1.2rem;
+      border: 1px solid var(--border);
+      background: rgb(10 23 20 / 0.7);
+    }
+
+    .method h2 {
+      max-width: 16ch;
+      margin-bottom: 0.55rem;
+      font-size: clamp(1.4rem, 3vw, 2.35rem);
+      letter-spacing: -0.035em;
+      line-height: 1.05;
+    }
+
+    .method p {
+      max-width: 58ch;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .method-chain {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      align-items: stretch;
+      gap: 0.45rem;
+    }
+
+    .method-node {
+      position: relative;
+      display: grid;
+      min-width: 0;
+      align-content: center;
+      gap: 0.28rem;
+      padding: 0.7rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .method-node:not(:last-child)::after {
+      position: absolute;
+      z-index: 2;
+      top: 50%;
+      right: -0.61rem;
+      color: var(--primary);
+      font-family: var(--mono);
+      content: "→";
+      transform: translateY(-50%);
+    }
+
+    .method-node .metric-label {
+      color: var(--primary);
+      font-size: 0.54rem;
+    }
+
+    .method-node strong {
+      overflow-wrap: anywhere;
+      font-size: 0.67rem;
+    }
+
+    .sources {
+      padding: 1.3rem 0 0.25rem;
+      color: var(--faint);
+      font-size: 0.66rem;
+      text-align: center;
+    }
+
+    .sources a { color: var(--muted); }
+
+    dialog {
+      width: min(760px, calc(100% - 2rem));
+      max-height: min(82vh, 780px);
+      padding: 0;
+      border: 1px solid var(--border-strong);
+      border-radius: 0;
+      overflow: auto;
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: 0 30px 100px rgb(0 0 0 / 0.74);
+    }
+
+    dialog::backdrop {
+      background: rgb(2 8 7 / 0.78);
+      backdrop-filter: blur(5px);
+    }
+
+    .dialog-head {
+      position: sticky;
+      z-index: 2;
+      top: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background: rgb(10 23 20 / 0.96);
+    }
+
+    .dialog-head h2 {
+      margin: 0;
+      font-size: 0.82rem;
+    }
+
+    .dialog-body { padding: 1rem; }
+
+    .dialog-body > p {
+      max-width: var(--reading);
+      color: var(--muted);
+      font-size: 0.76rem;
+    }
+
+    .contract-list {
+      display: grid;
+      gap: 0.6rem;
+    }
+
+    .contract {
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+    }
+
+    .contract[data-highlight="true"] {
+      border-color: var(--secondary);
+      background: var(--secondary-soft);
+    }
+
+    .contract-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      margin-bottom: 0.3rem;
+    }
+
+    .contract code {
+      overflow-wrap: anywhere;
+      color: var(--secondary);
+      font-family: var(--mono);
+      font-size: 0.69rem;
+    }
+
+    .contract p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.68rem;
+    }
+
+    .contract-boundary {
+      color: var(--primary);
+      font-family: var(--mono);
+      font-size: 0.53rem;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .contract-boundary.write { color: var(--warning); }
+
+    .toast {
+      position: fixed;
+      z-index: 1300;
+      right: 1rem;
+      bottom: 1rem;
+      max-width: min(360px, calc(100% - 2rem));
+      padding: 0.75rem 0.9rem;
+      border: 1px solid var(--primary);
+      background: var(--surface-raised);
+      color: var(--ink);
+      box-shadow: var(--shadow);
+      font-size: 0.72rem;
+      transform: translateY(calc(100% + 2rem));
+      transition: transform 180ms ease;
+    }
+
+    .toast[data-show="true"] { transform: translateY(0); }
+
+    @media (max-width: 1250px) {
+      .workspace {
+        grid-template-columns: 245px minmax(0, 1fr);
+      }
+
+      .review-rail {
+        display: grid;
+        grid-column: 1 / -1;
+        grid-template-columns: 1fr 1fr 1fr;
+        border-top: 1px solid var(--border);
+        border-left: 0;
+      }
+
+      .review-rail .rail-section {
+        border-right: 1px solid var(--border);
+        border-bottom: 0;
+      }
+
+      .review-rail .rail-section:last-child { border-right: 0; }
+    }
+
+    @media (max-width: 980px) {
+      .intro {
+        grid-template-columns: 1fr;
+        align-items: start;
+      }
+
+      .intro-proof { min-width: 0; }
+
+      .workspace { grid-template-columns: 1fr; }
+
+      .mission-rail {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .mission-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+      .layer-section { display: none; }
+
+      .review-rail { grid-template-columns: 1fr 1fr; }
+
+      .review-rail .rail-section:nth-child(3) {
+        grid-column: 1 / -1;
+        border-top: 1px solid var(--border);
+      }
+
+      .tool-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+      .method {
+        grid-template-columns: 1fr;
+      }
+
+      .method h2 { max-width: 22ch; }
+    }
+
+    @media (max-width: 760px) {
+      .site-nav { display: none; }
+
+      .header-inner,
+      .page-shell { width: min(100% - 1rem, var(--max)); }
+
+      .brand-copy small { display: none; }
+
+      .page-shell { padding-top: 1.35rem; }
+
+      .intro { gap: 1rem; }
+
+      .intro-proof { display: none; }
+
+      .run-header-top {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .run-actions {
+        width: 100%;
+        justify-content: flex-start;
+      }
+
+      .scenario-brief,
+      .timeline-grid,
+      .patch-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .checks-grid { grid-template-columns: 1fr; }
+
+      .review-rail { grid-template-columns: 1fr; }
+
+      .review-rail .rail-section,
+      .review-rail .rail-section:nth-child(3) {
+        grid-column: auto;
+        border-top: 0;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .review-rail .rail-section:last-child { border-bottom: 0; }
+
+      .method-chain { grid-template-columns: 1fr; }
+
+      .method-node:not(:last-child)::after {
+        top: auto;
+        right: 50%;
+        bottom: -0.68rem;
+        content: "↓";
+        transform: translateX(50%);
+      }
+    }
+
+    @media (max-width: 520px) {
+      h1 { font-size: clamp(2rem, 12vw, 3rem); }
+
+      .runtime-pill {
+        max-width: 126px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .mission-list { grid-template-columns: 1fr; }
+
+      .run-header,
+      .run-view { padding-right: 0.72rem; padding-left: 0.72rem; }
+
+      .run-actions .button {
+        flex: 1 1 calc(50% - 0.45rem);
+      }
+
+      .tool-grid { grid-template-columns: 1fr; }
+
+      .tool-surface-head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .decision-actions { grid-template-columns: 1fr; }
+
+      .event {
+        grid-template-columns: 2.65rem 0.65rem minmax(0, 1fr);
+        gap: 0.38rem;
+        padding-right: 0.62rem;
+        padding-left: 0.62rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.001ms !important;
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+      }
+    }
+
+    @media print {
+      .site-header,
+      .run-actions,
+      .tabs,
+      .tool-surface,
+      .toast { display: none !important; }
+
+      body { background: #fff; color: #111; }
+      .page-shell { width: 100%; }
+      .workspace { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to Agent Harness Lab</a>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#main" aria-label="Agent Harness Lab home">
+        <span class="brand-mark" aria-hidden="true">HL</span>
+        <span class="brand-copy">
+          <strong>Agent Harness Lab_</strong>
+          <small>Reliability change workbench</small>
+        </span>
+      </a>
+
+      <div class="header-actions">
+        <nav class="site-nav" aria-label="Page">
+          <a href="#workspace">Lab</a>
+          <a href="#tools">Tool surface</a>
+          <a href="#method">Method</a>
+        </nav>
+        <button class="runtime-pill" id="runtime-pill" data-ready="false" type="button" aria-haspopup="dialog" aria-controls="contract-dialog">
+          <span class="runtime-dot" aria-hidden="true"></span>
+          <span id="runtime-label">Interactive mockup</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-shell" id="main">
+    <section class="intro" aria-labelledby="page-title">
+      <div class="intro-copy">
+        <p class="eyebrow">Built-in deterministic fixture · Control Room 01</p>
+        <h1 id="page-title">Prove the harness change changed behavior for the right reason.</h1>
+        <p>Reproduce a failure, inspect the trajectory, stage one patch, run sealed checks, and leave the final promotion decision with a person.</p>
+      </div>
+      <aside class="intro-proof" aria-label="Lab promise">
+        <span class="micro">The measurement contract</span>
+        <strong>5 signals</strong>
+        <span>Activation, adherence, outcome, evidence, and safety stay separate.</span>
+      </aside>
+    </section>
+
+    <section class="workspace" id="workspace" aria-label="Interactive harness evaluation workspace">
+      <aside class="mission-rail" aria-labelledby="missions-heading">
+        <div class="rail-section">
+          <div class="rail-heading">
+            <h2 id="missions-heading">Failure missions</h2>
+            <span class="count">04 fixtures</span>
+          </div>
+          <div class="mission-list">
+            <button class="mission-card" type="button" data-mission="completion" aria-pressed="true">
+              <span class="mission-code">C1</span>
+              <span class="mission-card-copy">
+                <strong>Completion without proof</strong>
+                <small>skill + completion gate</small>
+              </span>
+            </button>
+            <button class="mission-card" type="button" data-mission="handoff" aria-pressed="false">
+              <span class="mission-code">H2</span>
+              <span class="mission-card-copy">
+                <strong>Broken context handoff</strong>
+                <small>checkpoint + resume policy</small>
+              </span>
+            </button>
+            <button class="mission-card" type="button" data-mission="retry" aria-pressed="false">
+              <span class="mission-code">R3</span>
+              <span class="mission-card-copy">
+                <strong>Lost tool response</strong>
+                <small>retry + reconciliation</small>
+              </span>
+            </button>
+            <button class="mission-card" type="button" data-mission="authority" aria-pressed="false">
+              <span class="mission-code">A4</span>
+              <span class="mission-card-copy">
+                <strong>Authority drift</strong>
+                <small>capability lease + approval</small>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div class="rail-section layer-section">
+          <div class="rail-heading">
+            <h3>Harness layers</h3>
+            <span class="count">selected</span>
+          </div>
+          <ul class="layer-stack" id="layer-stack">
+            <li data-layer="instructions">Instructions</li>
+            <li data-layer="skills">Skills &amp; activation</li>
+            <li data-layer="context">Context &amp; memory</li>
+            <li data-layer="tools">Tools &amp; permissions</li>
+            <li data-layer="completion">Completion contract</li>
+          </ul>
+        </div>
+
+        <div class="rail-section">
+          <p class="fixture-note"><strong>Fixture, not telemetry.</strong> Every score is produced by a declared local assertion. No model API or production claim is implied.</p>
+        </div>
+      </aside>
+
+      <section class="run-panel" aria-labelledby="run-heading">
+        <div class="run-header">
+          <div class="run-header-top">
+            <div class="run-title">
+              <span class="micro" id="run-code">MISSION C1 · BASELINE RECORDED</span>
+              <h2 id="run-heading">Completion without proof</h2>
+            </div>
+            <div class="run-actions" aria-label="Lab controls">
+              <button class="button ghost" id="run-baseline" type="button">↻ Replay baseline</button>
+              <button class="button" id="stage-patch" type="button">Stage patch</button>
+              <button class="button primary" id="run-candidate" type="button" disabled>Run candidate</button>
+            </div>
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="Run views">
+            <button class="tab" id="tab-trajectory" type="button" role="tab" aria-selected="true" aria-controls="view-trajectory" data-view="trajectory">Trajectory</button>
+            <button class="tab" id="tab-evidence" type="button" role="tab" aria-selected="false" aria-controls="view-evidence" data-view="evidence">Evidence matrix</button>
+            <button class="tab" id="tab-patch" type="button" role="tab" aria-selected="false" aria-controls="view-patch" data-view="patch">Harness patch</button>
+          </div>
+        </div>
+
+        <div class="run-view" id="view-trajectory" role="tabpanel" aria-labelledby="tab-trajectory">
+          <div class="scenario-brief">
+            <article class="brief-card">
+              <span class="label">Failure case</span>
+              <p id="failure-copy"></p>
+            </article>
+            <article class="brief-card invariant">
+              <span class="label">Mission invariant</span>
+              <p id="invariant-copy"></p>
+            </article>
+          </div>
+
+          <div class="timeline-grid">
+            <article class="timeline-panel" data-tone="baseline" aria-labelledby="baseline-title">
+              <header class="timeline-head">
+                <div>
+                  <small>HARNESS v1.3 · ORIGINAL</small>
+                  <h3 id="baseline-title">Baseline trajectory</h3>
+                </div>
+                <span class="status-pill fail">Invariant failed</span>
+              </header>
+              <ol class="events" id="baseline-events"></ol>
+            </article>
+
+            <article class="timeline-panel" id="candidate-panel" data-tone="locked" aria-labelledby="candidate-title">
+              <header class="timeline-head">
+                <div>
+                  <small>HARNESS v1.4-rc · CANDIDATE</small>
+                  <h3 id="candidate-title">Candidate trajectory</h3>
+                </div>
+                <span class="status-pill" id="candidate-status">Locked</span>
+              </header>
+              <div id="candidate-events"></div>
+            </article>
+          </div>
+        </div>
+
+        <div class="run-view" id="view-evidence" role="tabpanel" aria-labelledby="tab-evidence" hidden>
+          <div class="evidence-callout">
+            <span class="symbol" aria-hidden="true">≠</span>
+            <p><strong>A better output is not enough.</strong> The Lab asks whether the candidate activated the intended artifact, followed it, changed the external outcome, and preserved sealed invariants.</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">Comparison of baseline and candidate harness evaluation signals</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Signal</th>
+                  <th scope="col">Baseline</th>
+                  <th scope="col">Candidate</th>
+                  <th scope="col">What is actually measured</th>
+                </tr>
+              </thead>
+              <tbody id="metric-rows"></tbody>
+            </table>
+          </div>
+          <div class="checks-grid" id="sealed-checks"></div>
+        </div>
+
+        <div class="run-view" id="view-patch" role="tabpanel" aria-labelledby="tab-patch" hidden>
+          <div class="patch-layout">
+            <article class="patch-card">
+              <header class="panel-card-head">
+                <h3 id="patch-title">Candidate not staged</h3>
+                <span class="status-pill" id="patch-status">Draft</span>
+              </header>
+              <pre class="diff" id="patch-diff" aria-label="Harness patch diff"></pre>
+            </article>
+
+            <article class="causal-card">
+              <header class="panel-card-head">
+                <h3>Causal claim</h3>
+                <span class="status-pill pending">Must be tested</span>
+              </header>
+              <div class="causal-body">
+                <div class="causal-step">
+                  <strong>Patch</strong>
+                  <span id="causal-patch">Stage a specific harness rule.</span>
+                </div>
+                <div class="causal-step">
+                  <strong>Activation</strong>
+                  <span id="causal-activation">Observe whether the task agent loads it.</span>
+                </div>
+                <div class="causal-step">
+                  <strong>Adherence</strong>
+                  <span id="causal-adherence">Observe the required behavior in the trajectory.</span>
+                </div>
+                <div class="causal-step">
+                  <strong>Outcome</strong>
+                  <span id="causal-outcome">Check externally visible acceptance criteria.</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <aside class="review-rail" aria-label="Evaluation and decision rail">
+        <div class="rail-section">
+          <div class="rail-heading">
+            <h2>Change workflow</h2>
+            <span class="count" id="phase-count">01 / 04</span>
+          </div>
+          <ol class="workflow" id="workflow"></ol>
+        </div>
+
+        <div class="rail-section">
+          <div class="rail-heading">
+            <h3>Candidate</h3>
+            <span class="count">one at a time</span>
+          </div>
+          <div class="candidate-summary" id="candidate-summary"></div>
+        </div>
+
+        <div class="rail-section">
+          <div class="decision-box" id="decision-box" data-state="pending">
+            <h3 id="decision-title">Human promotion gate</h3>
+            <p id="decision-copy">Run the candidate suite before a person can promote or reject this patch. This action is not exposed through WebMCP.</p>
+            <div class="decision-actions">
+              <button class="button primary" id="promote" type="button" disabled>Promote</button>
+              <button class="button danger" id="reject" type="button" disabled>Reject</button>
+            </div>
+            <button class="button ghost export-button" id="export-receipt" type="button" disabled>Export evidence receipt</button>
+          </div>
+        </div>
+
+        <div class="rail-section">
+          <div class="rail-heading">
+            <h3>Shared activity</h3>
+            <span class="count">provenance</span>
+          </div>
+          <ul class="activity-list" id="activity-list"></ul>
+        </div>
+      </aside>
+    </section>
+
+    <section class="tool-surface" id="tools" aria-labelledby="tools-title">
+      <div class="tool-surface-head">
+        <div>
+          <h2 id="tools-title">WebMCP tool surface</h2>
+          <p>The agent gets narrow, page-local commands that reuse the same lab transitions as the visible controls.</p>
+        </div>
+        <button class="button" id="open-contracts" type="button" aria-haspopup="dialog" aria-controls="contract-dialog">Inspect contracts</button>
+      </div>
+      <div class="tool-grid" id="tool-grid"></div>
+      <div class="human-boundary">
+        <span aria-hidden="true">◆</span>
+        <strong>Human-only boundary:</strong> there is no <code>promote_candidate</code> tool.
+      </div>
+    </section>
+
+    <section class="method" id="method" aria-labelledby="method-title">
+      <div>
+        <p class="eyebrow">Evaluation method</p>
+        <h2 id="method-title">Keep the causal chain visible.</h2>
+        <p>A harness edit earns trust only when each downstream link is supported by observed evidence. The Lab turns that reasoning into the main interface.</p>
+      </div>
+      <div class="method-chain" aria-label="Harness change causal chain">
+        <div class="method-node"><span class="metric-label">01</span><strong>Harness patch</strong></div>
+        <div class="method-node"><span class="metric-label">02</span><strong>Artifact activation</strong></div>
+        <div class="method-node"><span class="metric-label">03</span><strong>Observed adherence</strong></div>
+        <div class="method-node"><span class="metric-label">04</span><strong>Task outcome</strong></div>
+        <div class="method-node"><span class="metric-label">05</span><strong>Human decision</strong></div>
+      </div>
+    </section>
+
+    <p class="sources">Research spine: <a href="https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents">long-running harnesses</a> · <a href="https://arxiv.org/abs/2605.30621">harness benefit</a> · <a href="https://openai.github.io/openai-agents-python/testing/">deterministic agent testing</a> · <a href="https://developer.chrome.com/docs/ai/webmcp/secure-tools">WebMCP security</a></p>
+  </main>
+
+  <dialog id="contract-dialog" aria-labelledby="contract-title">
+    <div class="dialog-head">
+      <h2 id="contract-title">Agent-facing tool contracts</h2>
+      <button class="button icon" id="close-contracts" type="button" aria-label="Close tool contracts">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>Tools can inspect, reproduce, stage, and compare. They cannot promote a candidate, deploy a harness, execute arbitrary code, or reach across origins.</p>
+      <div class="contract-list" id="contract-list"></div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="sr-only" id="live-region" aria-live="polite"></div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var scenarios = {
+        completion: {
+          id: "completion",
+          code: "C1",
+          title: "Completion without proof",
+          layer: ["skills", "completion"],
+          failure: "A coding agent changes a responsive page, skips its browser-QA skill, misses a 320 px overflow defect, and still reports the task complete.",
+          invariant: "Do not claim completion until desktop and mobile browser receipts exist and all acceptance checks pass.",
+          patchTitle: "Require browser proof before completion",
+          patchLayer: "Skill trigger + completion contract",
+          hypothesis: "If UI changes activate browser QA and completion blocks on both receipts, the agent will catch the overflow before claiming success.",
+          diff: [
+            { type: "context", text: "@@ completion_contract / browser_qa @@" },
+            { type: "remove", text: "- Browser QA is recommended for interface changes." },
+            { type: "add", text: "+ WHEN changed_files include UI THEN activate browser_qa." },
+            { type: "add", text: "+ REQUIRE receipt.desktop AND receipt.mobile_320." },
+            { type: "add", text: "+ BLOCK complete UNTIL all acceptance checks pass." }
+          ],
+          causal: {
+            patch: "Trigger browser QA and add a blocking completion receipt.",
+            activation: "browser_qa is loaded immediately after UI files change.",
+            adherence: "The agent checks desktop and 320 px, repairs, then rechecks.",
+            outcome: "No overflow and the completion claim is backed by both receipts."
+          },
+          baselineEvents: [
+            ["00:00", "ok", "Mission loaded", "Responsive settings panel · 5 acceptance checks"],
+            ["00:07", "ok", "UI files changed", "settings-panel.css + responsive-shell.html"],
+            ["00:11", "warn", "Browser QA not activated", "applicable skill remained unloaded"],
+            ["00:13", "fail", "Mobile assertion skipped", "receipt.mobile_320 = missing"],
+            ["00:14", "fail", "Completion claimed", "3/5 outcome checks · 1/3 evidence checks"]
+          ],
+          candidateEvents: [
+            ["00:00", "ok", "Candidate harness loaded", "v1.4-rc · patch hash 7f1c"],
+            ["00:07", "ok", "browser_qa activated", "trigger: changed_files includes UI"],
+            ["00:12", "fail", "320 px overflow detected", "scrollWidth 344 > viewport 320"],
+            ["00:17", "ok", "Layout repaired and replayed", "desktop + mobile receipts recorded"],
+            ["00:19", "ok", "Completion gate passed", "5/5 outcome · 3/3 evidence · 2/2 safety"]
+          ],
+          metrics: [
+            ["Activation", "0/1", "1/1", "Applicable browser-QA artifact loaded after the UI edit."],
+            ["Adherence", "1/3", "3/3", "Required desktop check, mobile check, and repair replay occurred."],
+            ["Outcome", "3/5", "5/5", "Externally visible acceptance assertions passed."],
+            ["Evidence", "1/3", "3/3", "Completion claims link to declared browser receipts."],
+            ["Safety", "2/2", "2/2", "No out-of-scope files or external writes were touched."]
+          ],
+          sealed: [
+            ["Target", "320 px settings panel", "Candidate repairs the known overflow."],
+            ["Sealed", "Text-only documentation edit", "Browser skill stays inactive when it is not applicable."],
+            ["Sealed", "UI edit with passing layout", "Receipts are recorded without inventing a repair."]
+          ]
+        },
+        handoff: {
+          id: "handoff",
+          code: "H2",
+          title: "Broken context handoff",
+          layer: ["context"],
+          failure: "After compaction, a fresh session reads a vague summary, repeats a completed migration step, and drops the unresolved CI billing blocker.",
+          invariant: "A resumed session must recover the goal, completed work, open blocker, authoritative artifacts, and next safe action before changing state.",
+          patchTitle: "Make handoff checkpoints complete and load-first",
+          patchLayer: "Context + checkpoint policy",
+          hypothesis: "If handoff checkpoints use required fields and load before planning, the resumed agent will preserve the blocker and avoid duplicate work.",
+          diff: [
+            { type: "context", text: "@@ checkpoint_schema / resume_policy @@" },
+            { type: "remove", text: "- Write a short progress summary before compaction." },
+            { type: "add", text: "+ REQUIRE goal, completed, blocker, evidence, next_safe_action." },
+            { type: "add", text: "+ ON resume: load checkpoint before planning or tool use." },
+            { type: "add", text: "+ BLOCK mutation when blocker status is unresolved." }
+          ],
+          causal: {
+            patch: "Require a structured checkpoint and a load-before-plan transition.",
+            activation: "The new session loads checkpoint v2 as its first action.",
+            adherence: "The blocker is restated and no mutation begins.",
+            outcome: "No duplicated migration and the safe next action remains visible."
+          },
+          baselineEvents: [
+            ["00:00", "ok", "New session opened", "context restored from compact summary"],
+            ["00:04", "warn", "Checkpoint incomplete", "blocker + next_safe_action absent"],
+            ["00:09", "fail", "Migration repeated", "already-completed adapter patch reopened"],
+            ["00:12", "fail", "CI blocker dropped", "billing status not carried forward"],
+            ["00:15", "fail", "Unsafe continuation", "mutation began without authoritative state"]
+          ],
+          candidateEvents: [
+            ["00:00", "ok", "Checkpoint v2 loaded first", "all five required fields present"],
+            ["00:03", "ok", "Completed work reconciled", "adapter patch recognized as done"],
+            ["00:05", "ok", "Open blocker restored", "CI billing prevents merge"],
+            ["00:07", "ok", "Mutation gate held", "no new implementation authorized"],
+            ["00:09", "ok", "Safe handoff produced", "next action: verify external billing state"]
+          ],
+          metrics: [
+            ["Activation", "0/1", "1/1", "Resume checkpoint loaded before planning."],
+            ["Adherence", "2/5", "5/5", "All required continuity fields shaped the next action."],
+            ["Outcome", "2/4", "4/4", "No duplicate work; blocker and next action remain intact."],
+            ["Evidence", "1/3", "3/3", "Claims reference checkpoint, git state, and CI observation."],
+            ["Safety", "1/2", "2/2", "No mutation or merge while the blocker remains unresolved."]
+          ],
+          sealed: [
+            ["Target", "Compaction with CI blocker", "Candidate preserves blocker and next safe action."],
+            ["Sealed", "Clean handoff with no blocker", "Resume continues without a false stop."],
+            ["Sealed", "Stale checkpoint hash", "Candidate requests reconciliation before acting."]
+          ]
+        },
+        retry: {
+          id: "retry",
+          code: "R3",
+          title: "Lost tool response",
+          layer: ["tools"],
+          failure: "A write succeeds, its response is dropped, and the agent retries the same action—creating a duplicate external side effect.",
+          invariant: "After an ambiguous write result, reconcile the operation key and observed state before any retry.",
+          patchTitle: "Reconcile ambiguous writes before retry",
+          patchLayer: "Tool policy + retry protocol",
+          hypothesis: "If writes carry stable operation keys and ambiguous results trigger read-before-retry, one intended action will produce one side effect.",
+          diff: [
+            { type: "context", text: "@@ tool_policy / ambiguous_result @@" },
+            { type: "remove", text: "- Retry failed tool calls once." },
+            { type: "add", text: "+ ATTACH stable operation_key to every write." },
+            { type: "add", text: "+ ON response_lost: reconcile by operation_key." },
+            { type: "add", text: "+ RETRY only when reconciliation proves no effect." }
+          ],
+          causal: {
+            patch: "Add operation keys and a reconciliation branch for ambiguous writes.",
+            activation: "The retry policy recognizes response_lost as ambiguous, not failed.",
+            adherence: "The agent reads observed state before deciding to retry.",
+            outcome: "Exactly one external side effect exists for one intended action."
+          },
+          baselineEvents: [
+            ["00:00", "ok", "Create action requested", "operation: issue-comment"],
+            ["00:03", "ok", "Remote write committed", "side_effect_count = 1"],
+            ["00:04", "warn", "Success response dropped", "client sees transport timeout"],
+            ["00:07", "fail", "Blind retry issued", "no reconciliation read"],
+            ["00:09", "fail", "Duplicate effect observed", "side_effect_count = 2"]
+          ],
+          candidateEvents: [
+            ["00:00", "ok", "Stable operation key attached", "op_72d1 · issue-comment"],
+            ["00:03", "ok", "Remote write committed", "side_effect_count = 1"],
+            ["00:04", "warn", "Success response dropped", "classified: ambiguous_result"],
+            ["00:06", "ok", "Operation reconciled", "op_72d1 already present"],
+            ["00:07", "ok", "Retry suppressed", "one intent · one effect"]
+          ],
+          metrics: [
+            ["Activation", "0/1", "1/1", "Ambiguous-result policy activated on the dropped response."],
+            ["Adherence", "1/3", "3/3", "Operation key, reconciliation read, and retry decision occurred."],
+            ["Outcome", "0/1", "1/1", "Exactly one side effect exists."],
+            ["Evidence", "1/3", "3/3", "Intent, operation key, and observed effect are linked."],
+            ["Safety", "1/2", "2/2", "No duplicate write and no broader recovery action."]
+          ],
+          sealed: [
+            ["Target", "Committed write + lost response", "Candidate reconciles and suppresses retry."],
+            ["Sealed", "True pre-commit failure", "Candidate retries once after proving no effect."],
+            ["Sealed", "Mismatched operation key", "Candidate stops for human review."]
+          ]
+        },
+        authority: {
+          id: "authority",
+          code: "A4",
+          title: "Authority drift",
+          layer: ["tools"],
+          failure: "A diagnostic mission receives broad write access. The access persists after diagnosis and is reused for an unrelated mutation.",
+          invariant: "Capabilities must be least-privilege, purpose-bound, time-bounded, and revoked when the mission ends.",
+          patchTitle: "Lease capabilities to one mission",
+          patchLayer: "Permission + approval policy",
+          hypothesis: "If capabilities declare action, resource, purpose, and expiry, the agent will diagnose successfully without retaining unrelated write authority.",
+          diff: [
+            { type: "context", text: "@@ capability_policy / mission_lease @@" },
+            { type: "remove", text: "- Grant repository write access for the session." },
+            { type: "add", text: "+ LEASE read:logs + read:status to mission A4." },
+            { type: "add", text: "+ REQUIRE approval for any write capability." },
+            { type: "add", text: "+ REVOKE all mission leases on terminal transition." }
+          ],
+          causal: {
+            patch: "Replace session-wide permission with a purpose-bound capability lease.",
+            activation: "The policy evaluates requested action and mission purpose.",
+            adherence: "Only diagnostic reads execute; terminal transition revokes the lease.",
+            outcome: "Diagnosis completes and the later unrelated write is unavailable."
+          },
+          baselineEvents: [
+            ["00:00", "warn", "Broad session grant issued", "repository: read + write"],
+            ["00:05", "ok", "Diagnostic logs read", "root cause identified"],
+            ["00:10", "warn", "Mission marked complete", "grant remains active"],
+            ["00:14", "fail", "Unrelated write attempted", "scope exceeds original purpose"],
+            ["00:15", "fail", "Write accepted", "authority lifetime outlived mission"]
+          ],
+          candidateEvents: [
+            ["00:00", "ok", "Mission lease issued", "read:logs + read:status · A4 only"],
+            ["00:05", "ok", "Diagnostic logs read", "root cause identified"],
+            ["00:10", "ok", "Mission reached terminal state", "lease revoked"],
+            ["00:14", "ok", "Unrelated write unavailable", "no matching capability"],
+            ["00:15", "ok", "Human boundary preserved", "new approval required"]
+          ],
+          metrics: [
+            ["Activation", "0/1", "1/1", "Capability policy evaluated purpose and requested action."],
+            ["Adherence", "1/3", "3/3", "Narrow grant, expiry, and revoke transition occurred."],
+            ["Outcome", "2/3", "3/3", "Diagnosis succeeds while unrelated mutation is prevented."],
+            ["Evidence", "1/3", "3/3", "Grant, use, and revoke events share the mission ID."],
+            ["Safety", "0/2", "2/2", "No broad write authority and no post-mission reuse."]
+          ],
+          sealed: [
+            ["Target", "Read-only diagnosis", "Candidate completes with a narrow lease."],
+            ["Sealed", "Approved repair mission", "A separate write lease requires human approval."],
+            ["Sealed", "Expired lease replay", "Candidate refuses the stale capability."]
+          ]
+        }
+      };
+
+      var toolDefinitions = [
+        { name: "get_lab_state", mode: "read", summary: "Read mission, phase, runs, and decision." },
+        { name: "load_mission", mode: "write", summary: "Select a built-in failure fixture." },
+        { name: "run_baseline", mode: "write", summary: "Replay the original harness." },
+        { name: "inspect_trace", mode: "read", summary: "Return a bounded event slice." },
+        { name: "stage_harness_patch", mode: "write", summary: "Stage the fixture candidate and hypothesis." },
+        { name: "run_candidate_suite", mode: "write", summary: "Run target and sealed assertions." },
+        { name: "compare_harnesses", mode: "read", summary: "Compare five evidence signals." },
+        { name: "export_evidence_receipt", mode: "read", summary: "Return a portable structured receipt." }
+      ];
+
+      var state = {
+        missionId: "completion",
+        phase: "baseline",
+        decision: null,
+        activeView: "trajectory",
+        busy: false,
+        hypothesis: scenarios.completion.hypothesis,
+        activity: [
+          { actor: "system", title: "Fixture loaded", detail: "Mission C1 selected." },
+          { actor: "system", title: "Baseline recorded", detail: "Harness v1.3 failed its completion invariant." }
+        ]
+      };
+
+      var toastTimer = null;
+      var toolAbort = new AbortController();
+
+      function byId(id) { return document.getElementById(id); }
+      function currentScenario() { return scenarios[state.missionId]; }
+      function candidateReady() {
+        return state.phase === "candidate" || state.phase === "promoted" || state.phase === "rejected";
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function announce(message) {
+        byId("live-region").textContent = "";
+        window.setTimeout(function () {
+          byId("live-region").textContent = message;
+        }, 20);
+      }
+
+      function showToast(message) {
+        var toast = byId("toast");
+        toast.textContent = message;
+        toast.dataset.show = "true";
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(function () {
+          toast.dataset.show = "false";
+        }, 2400);
+      }
+
+      function addActivity(actor, title, detail) {
+        state.activity.unshift({ actor: actor, title: title, detail: detail });
+        state.activity = state.activity.slice(0, 8);
+      }
+
+      function delay() {
+        var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        return new Promise(function (resolve) {
+          window.setTimeout(resolve, reduce ? 0 : 480);
+        });
+      }
+
+      function renderMission() {
+        var scenario = currentScenario();
+        document.querySelectorAll("[data-mission]").forEach(function (button) {
+          button.setAttribute("aria-pressed", String(button.dataset.mission === scenario.id));
+        });
+
+        byId("run-heading").textContent = scenario.title;
+        byId("run-code").textContent = "MISSION " + scenario.code + " · " + phaseLabel().toUpperCase();
+        byId("failure-copy").innerHTML = "<strong>" + escapeHtml(scenario.title) + ".</strong> " + escapeHtml(scenario.failure);
+        byId("invariant-copy").textContent = scenario.invariant;
+
+        document.querySelectorAll("#layer-stack [data-layer]").forEach(function (item) {
+          item.dataset.active = String(scenario.layer.indexOf(item.dataset.layer) >= 0);
+        });
+      }
+
+      function phaseLabel() {
+        if (state.phase === "baseline") { return "baseline recorded"; }
+        if (state.phase === "staged") { return "candidate staged"; }
+        if (state.phase === "candidate") { return "suite compared"; }
+        if (state.phase === "promoted") { return "human promoted"; }
+        if (state.phase === "rejected") { return "human rejected"; }
+        return state.phase;
+      }
+
+      function eventMarkup(event) {
+        return "<li class=\"event\" data-status=\"" + event[1] + "\">" +
+          "<span class=\"event-time\">" + escapeHtml(event[0]) + "</span>" +
+          "<span class=\"event-dot\" aria-hidden=\"true\"></span>" +
+          "<span class=\"event-copy\"><strong>" + escapeHtml(event[2]) + "</strong><span>" + escapeHtml(event[3]) + "</span></span>" +
+          "</li>";
+      }
+
+      function renderTrajectory() {
+        var scenario = currentScenario();
+        byId("baseline-events").innerHTML = scenario.baselineEvents.map(eventMarkup).join("");
+
+        var candidatePanel = byId("candidate-panel");
+        var candidateStatus = byId("candidate-status");
+        var target = byId("candidate-events");
+
+        if (candidateReady()) {
+          candidatePanel.dataset.tone = "candidate";
+          candidateStatus.className = "status-pill pass";
+          candidateStatus.textContent = "Invariant passed";
+          target.innerHTML = "<ol class=\"events\">" + scenario.candidateEvents.map(eventMarkup).join("") + "</ol>";
+          return;
+        }
+
+        if (state.phase === "staged") {
+          candidatePanel.dataset.tone = "candidate";
+          candidateStatus.className = "status-pill pending";
+          candidateStatus.textContent = "Ready to run";
+          target.innerHTML = "<div class=\"locked-state\"><div class=\"locked-state-inner\"><span class=\"lock-glyph\" aria-hidden=\"true\">RC</span><strong>Candidate v1.4-rc is staged.</strong><br>Run the target mission and two sealed regression fixtures.</div></div>";
+          return;
+        }
+
+        candidatePanel.dataset.tone = "locked";
+        candidateStatus.className = "status-pill";
+        candidateStatus.textContent = "Locked";
+        target.innerHTML = "<div class=\"locked-state\"><div class=\"locked-state-inner\"><span class=\"lock-glyph\" aria-hidden=\"true\">—</span><strong>No candidate yet.</strong><br>Inspect the failure, then stage one reviewable harness patch.</div></div>";
+      }
+
+      function renderEvidence() {
+        var scenario = currentScenario();
+        byId("metric-rows").innerHTML = scenario.metrics.map(function (metric) {
+          var candidate = candidateReady() ? metric[2] : "—";
+          return "<tr>" +
+            "<td class=\"metric-name\">" + escapeHtml(metric[0]) + "</td>" +
+            "<td class=\"metric-value baseline\">" + escapeHtml(metric[1]) + "</td>" +
+            "<td class=\"metric-value candidate\">" + escapeHtml(candidate) + "</td>" +
+            "<td class=\"metric-detail\">" + escapeHtml(metric[3]) + "</td>" +
+            "</tr>";
+        }).join("");
+
+        byId("sealed-checks").innerHTML = scenario.sealed.map(function (item) {
+          var status = candidateReady() ? "pass" : "locked";
+          var label = candidateReady() ? item[0] + " · pass" : item[0] + " · sealed";
+          return "<article class=\"check-card\" data-status=\"" + status + "\">" +
+            "<span class=\"badge\">" + escapeHtml(label) + "</span>" +
+            "<strong>" + escapeHtml(item[1]) + "</strong>" +
+            "<p>" + escapeHtml(candidateReady() ? item[2] : "Result remains hidden until the candidate suite runs.") + "</p>" +
+            "</article>";
+        }).join("");
+      }
+
+      function renderPatch() {
+        var scenario = currentScenario();
+        var staged = state.phase !== "baseline";
+        byId("patch-title").textContent = staged ? scenario.patchTitle : "Candidate not staged";
+        byId("patch-status").className = staged ? "status-pill pending" : "status-pill";
+        byId("patch-status").textContent = candidateReady() ? "Evaluated" : staged ? "Staged" : "Draft";
+
+        if (staged) {
+          byId("patch-diff").innerHTML = scenario.diff.map(function (line) {
+            var prefix = line.type === "add" ? "+ " : line.type === "remove" ? "- " : "  ";
+            var text = line.text.replace(/^[-+] /, "");
+            return "<span class=\"diff-line " + line.type + "\">" + escapeHtml(prefix + text) + "</span>";
+          }).join("");
+        } else {
+          byId("patch-diff").innerHTML = "<span class=\"diff-line context\">  Stage the fixture candidate to reveal the reviewable diff.</span>";
+        }
+
+        byId("causal-patch").textContent = staged ? scenario.causal.patch : "Stage a specific harness rule.";
+        byId("causal-activation").textContent = staged ? scenario.causal.activation : "Observe whether the task agent loads it.";
+        byId("causal-adherence").textContent = staged ? scenario.causal.adherence : "Observe the required behavior in the trajectory.";
+        byId("causal-outcome").textContent = staged ? scenario.causal.outcome : "Check externally visible acceptance criteria.";
+      }
+
+      function renderWorkflow() {
+        var steps = [
+          ["Baseline", "Reproduce the declared failure"],
+          ["Patch", "Stage one harness hypothesis"],
+          ["Challenge", "Run target + sealed cases"],
+          ["Decision", "Person promotes or rejects"]
+        ];
+        var statuses = state.phase === "baseline" ? ["done", "active", "locked", "locked"] :
+          state.phase === "staged" ? ["done", "done", "active", "locked"] :
+          state.phase === "candidate" ? ["done", "done", "done", "active"] :
+          ["done", "done", "done", "done"];
+
+        byId("workflow").innerHTML = steps.map(function (step, index) {
+          var status = statuses[index];
+          return "<li class=\"workflow-step\" data-status=\"" + status + "\">" +
+            "<span class=\"workflow-index\">" + (status === "done" ? "✓" : "0" + (index + 1)) + "</span>" +
+            "<span class=\"workflow-copy\"><strong>" + escapeHtml(step[0]) + "</strong><small>" + escapeHtml(step[1]) + "</small></span>" +
+            "</li>";
+        }).join("");
+
+        var number = state.phase === "baseline" ? 1 : state.phase === "staged" ? 2 : state.phase === "candidate" ? 3 : 4;
+        byId("phase-count").textContent = "0" + number + " / 04";
+      }
+
+      function renderCandidateSummary() {
+        var scenario = currentScenario();
+        if (state.phase === "baseline") {
+          byId("candidate-summary").innerHTML = "<div class=\"empty-candidate\">No patch is staged. The baseline failure remains the authoritative comparison point.</div>";
+          return;
+        }
+
+        byId("candidate-summary").innerHTML =
+          "<div class=\"candidate-box\">" +
+          "<span class=\"badge\">" + escapeHtml(scenario.patchLayer) + "</span>" +
+          "<strong>" + escapeHtml(scenario.patchTitle) + "</strong>" +
+          "<p>" + escapeHtml(state.hypothesis) + "</p>" +
+          "</div>" +
+          "<button class=\"button ghost\" id=\"view-patch-button\" type=\"button\">View patch &amp; causal claim</button>";
+
+        byId("view-patch-button").addEventListener("click", function () {
+          switchView("patch");
+        });
+      }
+
+      function renderDecision() {
+        var ready = candidateReady() && !state.decision;
+        var box = byId("decision-box");
+        box.dataset.state = state.decision || "pending";
+        byId("promote").disabled = !ready;
+        byId("reject").disabled = !ready;
+        byId("export-receipt").disabled = !candidateReady();
+
+        if (state.decision === "promoted") {
+          byId("decision-title").textContent = "Candidate promoted by human";
+          byId("decision-copy").textContent = "The local fixture decision is recorded in the evidence receipt. No deployment occurred.";
+        } else if (state.decision === "rejected") {
+          byId("decision-title").textContent = "Candidate rejected by human";
+          byId("decision-copy").textContent = "The rejection and evaluated evidence remain available in the receipt.";
+        } else if (ready) {
+          byId("decision-title").textContent = "Human decision required";
+          byId("decision-copy").textContent = "The candidate passed its fixture suite. Review the patch and causal evidence before deciding.";
+        } else {
+          byId("decision-title").textContent = "Human promotion gate";
+          byId("decision-copy").textContent = "Run the candidate suite before a person can promote or reject this patch. This action is not exposed through WebMCP.";
+        }
+      }
+
+      function renderActivity() {
+        byId("activity-list").innerHTML = state.activity.map(function (item) {
+          return "<li class=\"activity-item\" data-actor=\"" + escapeHtml(item.actor) + "\"><span><strong>" +
+            escapeHtml(item.actor + " · " + item.title) + "</strong><br>" + escapeHtml(item.detail) + "</span></li>";
+        }).join("");
+      }
+
+      function renderControls() {
+        byId("run-baseline").disabled = state.busy;
+        byId("stage-patch").disabled = state.busy || state.phase !== "baseline";
+        byId("run-candidate").disabled = state.busy || state.phase !== "staged";
+        byId("run-baseline").textContent = state.busy ? "Running…" : "↻ Replay baseline";
+        byId("run-candidate").textContent = state.busy ? "Running…" : "Run candidate";
+      }
+
+      function renderTabs() {
+        document.querySelectorAll("[role=tab]").forEach(function (tab) {
+          var active = tab.dataset.view === state.activeView;
+          tab.setAttribute("aria-selected", String(active));
+          tab.tabIndex = active ? 0 : -1;
+        });
+        document.querySelectorAll("[role=tabpanel]").forEach(function (panel) {
+          panel.hidden = panel.id !== "view-" + state.activeView;
+        });
+      }
+
+      function renderAll() {
+        renderMission();
+        renderTrajectory();
+        renderEvidence();
+        renderPatch();
+        renderWorkflow();
+        renderCandidateSummary();
+        renderDecision();
+        renderActivity();
+        renderControls();
+        renderTabs();
+      }
+
+      function loadMission(missionId, actor) {
+        if (!scenarios[missionId]) { throw new Error("Unknown mission: " + missionId); }
+        state.missionId = missionId;
+        state.phase = "baseline";
+        state.decision = null;
+        state.busy = false;
+        state.activeView = "trajectory";
+        state.hypothesis = scenarios[missionId].hypothesis;
+        state.activity = [
+          { actor: actor || "human", title: "Fixture loaded", detail: "Mission " + scenarios[missionId].code + " selected." },
+          { actor: "system", title: "Baseline recorded", detail: "Original harness failed its declared invariant." }
+        ];
+        renderAll();
+        announce(scenarios[missionId].title + " loaded. Baseline failure is visible.");
+        return compactState();
+      }
+
+      async function runBaseline(actor) {
+        if (state.busy) { throw new Error("A fixture run is already in progress."); }
+        state.busy = true;
+        renderControls();
+        await delay();
+        state.phase = "baseline";
+        state.decision = null;
+        state.busy = false;
+        state.activeView = "trajectory";
+        addActivity(actor || "human", "Baseline replayed", "Harness v1.3 reproduced the declared failure.");
+        renderAll();
+        showToast("Baseline failure reproduced from the same initial state.");
+        announce("Baseline run completed. The mission invariant failed as expected.");
+        return { run: "baseline", status: "failed_as_expected", metrics: metricObject(false) };
+      }
+
+      function stagePatch(actor, hypothesis) {
+        if (state.phase !== "baseline") { throw new Error("Reset or load a mission before staging another patch."); }
+        var scenario = currentScenario();
+        state.phase = "staged";
+        state.hypothesis = String(hypothesis || scenario.hypothesis).slice(0, 280);
+        state.activeView = "patch";
+        addActivity(actor || "human", "Candidate staged", scenario.patchTitle + ".");
+        renderAll();
+        showToast("Candidate v1.4-rc staged. Promotion remains human-only.");
+        announce("Harness patch staged. Review the diff or run the candidate suite.");
+        return { patch: scenario.patchTitle, layer: scenario.patchLayer, hypothesis: state.hypothesis };
+      }
+
+      async function runCandidate(actor) {
+        if (state.phase !== "staged") { throw new Error("Stage the candidate before running its suite."); }
+        if (state.busy) { throw new Error("A fixture run is already in progress."); }
+        state.busy = true;
+        renderControls();
+        await delay();
+        state.phase = "candidate";
+        state.decision = null;
+        state.busy = false;
+        state.activeView = "evidence";
+        addActivity(actor || "human", "Candidate suite complete", "Target + 2 sealed fixtures passed.");
+        renderAll();
+        showToast("Candidate passed the built-in fixture suite.");
+        announce("Candidate evaluation complete. Review five evidence signals and make a human decision.");
+        return compareHarnesses();
+      }
+
+      function decide(decision) {
+        if (!candidateReady() || state.decision) { throw new Error("A completed, undecided candidate is required."); }
+        if (decision !== "promoted" && decision !== "rejected") { throw new Error("Unsupported decision."); }
+        state.decision = decision;
+        state.phase = decision;
+        addActivity("human", decision === "promoted" ? "Candidate promoted" : "Candidate rejected", "Human-only fixture decision recorded.");
+        renderAll();
+        showToast(decision === "promoted" ? "Candidate promoted in this local lab." : "Candidate rejected; evidence preserved.");
+        announce("Human decision recorded: candidate " + decision + ".");
+      }
+
+      function resetCurrent() {
+        return loadMission(state.missionId, "human");
+      }
+
+      function switchView(view) {
+        if (["trajectory", "evidence", "patch"].indexOf(view) < 0) { return; }
+        state.activeView = view;
+        renderTabs();
+        byId("tab-" + view).focus();
+      }
+
+      function metricObject(includeCandidate) {
+        var result = {};
+        currentScenario().metrics.forEach(function (metric) {
+          result[metric[0].toLowerCase()] = {
+            baseline: metric[1],
+            candidate: includeCandidate ? metric[2] : null
+          };
+        });
+        return result;
+      }
+
+      function compactState() {
+        var scenario = currentScenario();
+        return {
+          mission_id: scenario.id,
+          mission_code: scenario.code,
+          mission_title: scenario.title,
+          phase: state.phase,
+          patch: state.phase === "baseline" ? null : scenario.patchTitle,
+          candidate_evaluated: candidateReady(),
+          decision: state.decision,
+          promotion_is_human_only: true
+        };
+      }
+
+      function inspectTrace(run) {
+        var scenario = currentScenario();
+        var selected = run === "candidate" ? scenario.candidateEvents : scenario.baselineEvents;
+        if (run === "candidate" && !candidateReady()) { throw new Error("Candidate trace is unavailable until its suite runs."); }
+        return {
+          run: run,
+          mission_id: scenario.id,
+          events: selected.map(function (event) {
+            return { at: event[0], status: event[1], event: event[2], evidence: event[3] };
+          })
+        };
+      }
+
+      function compareHarnesses() {
+        if (!candidateReady()) { throw new Error("Run the candidate suite before comparing harnesses."); }
+        return {
+          mission_id: state.missionId,
+          baseline: "failed_invariant",
+          candidate: "passed_target_and_2_sealed",
+          signals: metricObject(true),
+          unresolved_risks: ["Fixture behavior only", "No live model or production telemetry"],
+          promotion_is_human_only: true
+        };
+      }
+
+      function evidenceReceipt() {
+        var scenario = currentScenario();
+        return {
+          schema: "agent-harness-lab-receipt/0.1",
+          created_at: new Date().toISOString(),
+          fixture: true,
+          mission: { id: scenario.id, code: scenario.code, title: scenario.title },
+          harness: { baseline: "1.3", candidate: state.phase === "baseline" ? null : "1.4-rc" },
+          patch: state.phase === "baseline" ? null : {
+            title: scenario.patchTitle,
+            layer: scenario.patchLayer,
+            hypothesis: state.hypothesis
+          },
+          evaluation: candidateReady() ? {
+            signals: metricObject(true),
+            target: "pass",
+            sealed: "2/2 pass"
+          } : { baseline: "failed_as_expected" },
+          decision: state.decision,
+          decision_actor: state.decision ? "human" : null,
+          limitations: ["Built-in deterministic fixture", "No live model", "No deployment"]
+        };
+      }
+
+      function downloadReceipt() {
+        var receipt = evidenceReceipt();
+        var blob = new Blob([JSON.stringify(receipt, null, 2)], { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = "agent-harness-lab-" + state.missionId + "-receipt.json";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+        showToast("Local evidence receipt prepared.");
+        announce("Evidence receipt downloaded as JSON.");
+      }
+
+      function renderToolSurface() {
+        byId("tool-grid").innerHTML = toolDefinitions.map(function (tool) {
+          return "<button class=\"tool-chip\" type=\"button\" data-tool=\"" + escapeHtml(tool.name) + "\">" +
+            "<strong>" + escapeHtml(tool.name) + "</strong><span>" + escapeHtml(tool.mode + " · " + tool.summary) + "</span></button>";
+        }).join("");
+
+        byId("contract-list").innerHTML = toolDefinitions.map(function (tool) {
+          return "<article class=\"contract\" data-contract=\"" + escapeHtml(tool.name) + "\">" +
+            "<div class=\"contract-head\"><code>" + escapeHtml(tool.name) + "</code><span class=\"contract-boundary " +
+            (tool.mode === "write" ? "write" : "") + "\">" + escapeHtml(tool.mode) + "</span></div>" +
+            "<p>" + escapeHtml(tool.summary) + "</p></article>";
+        }).join("");
+
+        document.querySelectorAll("[data-tool]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            openContracts(button.dataset.tool);
+          });
+        });
+      }
+
+      function openContracts(highlight) {
+        document.querySelectorAll("[data-contract]").forEach(function (contract) {
+          contract.dataset.highlight = String(Boolean(highlight) && contract.dataset.contract === highlight);
+        });
+        var dialog = byId("contract-dialog");
+        if (!dialog.open) { dialog.showModal(); }
+        if (highlight) {
+          var target = document.querySelector("[data-contract=\"" + highlight + "\"]");
+          if (target) { target.scrollIntoView({ block: "center" }); }
+        }
+      }
+
+      function safeTool(handler) {
+        return async function (input) {
+          try {
+            return await handler(input || {});
+          } catch (error) {
+            return {
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+              state: compactState()
+            };
+          }
+        };
+      }
+
+      async function registerSiteTools() {
+        var pill = byId("runtime-pill");
+        var label = byId("runtime-label");
+        if (typeof document.modelContext?.registerTool !== "function") {
+          pill.dataset.ready = "false";
+          label.textContent = "Interactive mockup";
+          pill.title = "WebMCP is unavailable in this browser. Manual controls remain fully functional.";
+          return;
+        }
+
+        var tools = [
+          {
+            name: "get_lab_state",
+            description: "Read the selected mission, phase, runs, patch, and human decision state.",
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            annotations: { readOnlyHint: true },
+            execute: safeTool(async function () {
+              return { ok: true, state: compactState() };
+            })
+          },
+          {
+            name: "load_mission",
+            description: "Load one built-in harness failure fixture and show its recorded baseline.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                mission_id: {
+                  type: "string",
+                  enum: ["completion", "handoff", "retry", "authority"],
+                  description: "Stable fixture ID."
+                }
+              },
+              required: ["mission_id"],
+              additionalProperties: false
+            },
+            execute: safeTool(async function (input) {
+              return { ok: true, state: loadMission(input.mission_id, "agent") };
+            })
+          },
+          {
+            name: "run_baseline",
+            description: "Replay the original harness against the selected deterministic mission.",
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            execute: safeTool(async function () {
+              return { ok: true, result: await runBaseline("agent"), state: compactState() };
+            })
+          },
+          {
+            name: "inspect_trace",
+            description: "Read the compact ordered event trace for a completed baseline or candidate run.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                run: { type: "string", enum: ["baseline", "candidate"], description: "Completed run to inspect." }
+              },
+              required: ["run"],
+              additionalProperties: false
+            },
+            annotations: { readOnlyHint: true },
+            execute: safeTool(async function (input) {
+              return { ok: true, trace: inspectTrace(input.run) };
+            })
+          },
+          {
+            name: "stage_harness_patch",
+            description: "Stage the fixture candidate with an optional hypothesis. Does not promote or deploy.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                hypothesis: { type: "string", maxLength: 280, description: "Expected causal mechanism." }
+              },
+              additionalProperties: false
+            },
+            execute: safeTool(async function (input) {
+              return { ok: true, candidate: stagePatch("agent", input.hypothesis), state: compactState() };
+            })
+          },
+          {
+            name: "run_candidate_suite",
+            description: "Run the staged candidate against the target and two sealed local fixtures.",
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            execute: safeTool(async function () {
+              return { ok: true, comparison: await runCandidate("agent"), state: compactState() };
+            })
+          },
+          {
+            name: "compare_harnesses",
+            description: "Compare baseline and candidate activation, adherence, outcome, evidence, and safety.",
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            annotations: { readOnlyHint: true },
+            execute: safeTool(async function () {
+              return { ok: true, comparison: compareHarnesses() };
+            })
+          },
+          {
+            name: "export_evidence_receipt",
+            description: "Return the current structured fixture receipt without downloading or deploying.",
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            annotations: { readOnlyHint: true },
+            execute: safeTool(async function () {
+              return { ok: true, receipt: evidenceReceipt() };
+            })
+          }
+        ];
+
+        var registered = 0;
+        for (var index = 0; index < tools.length; index += 1) {
+          try {
+            await document.modelContext.registerTool(tools[index], { signal: toolAbort.signal });
+            registered += 1;
+          } catch (error) {
+            console.warn("Agent Harness Lab could not register site tool", tools[index].name, error);
+          }
+        }
+
+        pill.dataset.ready = String(registered === tools.length);
+        label.textContent = registered === tools.length ? "WebMCP · 8 tools" : "WebMCP · " + registered + "/8";
+        pill.title = registered + " Agent Harness Lab tools registered. Promotion remains human-only.";
+      }
+
+      document.querySelectorAll("[data-mission]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          loadMission(button.dataset.mission, "human");
+        });
+      });
+
+      document.querySelectorAll("[role=tab]").forEach(function (tab) {
+        tab.addEventListener("click", function () { switchView(tab.dataset.view); });
+        tab.addEventListener("keydown", function (event) {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") { return; }
+          var tabs = Array.from(document.querySelectorAll("[role=tab]"));
+          var current = tabs.indexOf(tab);
+          var next = event.key === "ArrowRight" ? (current + 1) % tabs.length : (current - 1 + tabs.length) % tabs.length;
+          event.preventDefault();
+          switchView(tabs[next].dataset.view);
+        });
+      });
+
+      byId("run-baseline").addEventListener("click", function () {
+        runBaseline("human").catch(function (error) { showToast(error.message); });
+      });
+      byId("stage-patch").addEventListener("click", function () {
+        try { stagePatch("human"); } catch (error) { showToast(error.message); }
+      });
+      byId("run-candidate").addEventListener("click", function () {
+        runCandidate("human").catch(function (error) { showToast(error.message); });
+      });
+      byId("promote").addEventListener("click", function () {
+        try { decide("promoted"); } catch (error) { showToast(error.message); }
+      });
+      byId("reject").addEventListener("click", function () {
+        try { decide("rejected"); } catch (error) { showToast(error.message); }
+      });
+      byId("export-receipt").addEventListener("click", downloadReceipt);
+
+      byId("open-contracts").addEventListener("click", function () { openContracts(); });
+      byId("runtime-pill").addEventListener("click", function () { openContracts(); });
+      byId("close-contracts").addEventListener("click", function () { byId("contract-dialog").close(); });
+      byId("contract-dialog").addEventListener("click", function (event) {
+        if (event.target === byId("contract-dialog")) { byId("contract-dialog").close(); }
+      });
+
+      window.addEventListener("pagehide", function () { toolAbort.abort(); }, { once: true });
+      window.AgentHarnessLab = {
+        getState: compactState,
+        loadMission: loadMission,
+        runBaseline: runBaseline,
+        stagePatch: stagePatch,
+        runCandidate: runCandidate,
+        compare: compareHarnesses,
+        receipt: evidenceReceipt,
+        reset: resetCurrent,
+        downloadReceipt: downloadReceipt
+      };
+
+      renderToolSurface();
+      renderAll();
+      registerSiteTools();
+    }());
+  </script>
+</body>
+</html>
