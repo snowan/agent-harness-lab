@@ -91,6 +91,14 @@ describe("command service", () => {
     expect(replay.replayed).toBe(true);
     expect(replay.state).toBe(first.state);
     expect(store.getState().revision).toBe(1);
+
+    await expect(
+      service.dispatch(command, context("load-once", "agent")),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(
+      service.dispatch({ type: "RESET" }, context("load-once")),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(store.getState()).toBe(first.state);
   });
 
   it("rejects overlapping commands while a run is active", async () => {
@@ -141,13 +149,40 @@ describe("command service", () => {
   });
 
   it("publishes one store notification for a multi-event command", async () => {
-    const { store, service } = createHarness();
+    const listenerError = new Error("subscriber crashed");
+    const onListenerError = vi.fn();
+    const store = createLabStore(createInitialLabState(), { onListenerError });
+    let run = 0;
+    const service = createCommandService({
+      store,
+      ids: {
+        nextRunId(kind, state) {
+          run += 1;
+          return `${state.missionId}-${kind}-${run}`;
+        },
+      },
+      effects: {
+        runBaseline: vi.fn(async () => undefined),
+        runCandidateSuite: vi.fn(async () => undefined),
+      },
+    });
+    store.subscribe(() => { throw listenerError; });
     const listener = vi.fn();
     store.subscribe(listener);
 
-    await service.dispatch({ type: "RUN_BASELINE" }, context("baseline"));
+    const first = await service.dispatch(
+      { type: "RUN_BASELINE" },
+      context("baseline"),
+    );
+    const replay = await service.dispatch(
+      { type: "RUN_BASELINE" },
+      context("baseline"),
+    );
 
     expect(listener).toHaveBeenCalledTimes(1);
+    expect(onListenerError).toHaveBeenCalledWith(listenerError);
+    expect(first.replayed).toBe(false);
+    expect(replay.replayed).toBe(true);
     expect(store.getState().revision).toBe(2);
   });
 });

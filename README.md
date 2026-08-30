@@ -51,7 +51,7 @@ agent-harness-lab/
     └── unit/
 ```
 
-The domain core is independent of React, browser storage, and WebMCP. Human controls and agent tools enter through the same command service, and each command commits one complete stable revision or leaves the workspace unchanged.
+The domain core is independent of React, browser storage, and WebMCP. Human controls already use the shared command service; the planned agent adapter will enter through that same boundary. Each command commits one complete stable revision or leaves the workspace unchanged.
 
 ## Submission boundary
 

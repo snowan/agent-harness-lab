@@ -33,6 +33,17 @@ test("supports keyboard mission loading with visible focus", async ({ page }) =>
 
   const button = page.getByRole("button", { name: "Load mission" });
   await expect(button).toBeFocused();
+  const focusRing = await button.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      color: style.outlineColor,
+      style: style.outlineStyle,
+      width: Number.parseFloat(style.outlineWidth),
+    };
+  });
+  expect(focusRing.style).not.toBe("none");
+  expect(focusRing.color).not.toBe("rgba(0, 0, 0, 0)");
+  expect(focusRing.width).toBeGreaterThanOrEqual(2);
   await page.keyboard.press("Enter");
 
   await expect(page.getByRole("heading", { name: "Authority drift" })).toBeVisible();

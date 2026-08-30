@@ -3,15 +3,34 @@ import type { LabState } from "../domain/types";
 
 export type LabStoreListener = () => void;
 
+export interface LabStoreOptions {
+  readonly onListenerError?: (error: unknown) => void;
+}
+
 export interface LabStore {
   readonly getState: () => LabState;
   readonly subscribe: (listener: LabStoreListener) => () => void;
   readonly commit: (nextState: LabState) => void;
 }
 
-export function createLabStore(initialState: LabState): LabStore {
+export function createLabStore(
+  initialState: LabState,
+  options: LabStoreOptions = {},
+): LabStore {
   let state = initialState;
   const listeners = new Set<LabStoreListener>();
+
+  function reportListenerError(error: unknown): void {
+    try {
+      if (options.onListenerError) {
+        options.onListenerError(error);
+        return;
+      }
+      console.error("A lab store subscriber failed after the revision committed.", error);
+    } catch {
+      // Subscriber diagnostics must never make a committed command appear to fail.
+    }
+  }
 
   return {
     getState: () => state,
@@ -27,7 +46,13 @@ export function createLabStore(initialState: LabState): LabStore {
         );
       }
       state = nextState;
-      listeners.forEach((listener) => listener());
+      listeners.forEach((listener) => {
+        try {
+          listener();
+        } catch (error) {
+          reportListenerError(error);
+        }
+      });
     },
   };
 }

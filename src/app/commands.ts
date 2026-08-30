@@ -44,6 +44,36 @@ interface CommandServiceDependencies {
   readonly ids: CommandIdFactory;
 }
 
+interface CompletedCommand {
+  readonly fingerprint: string;
+  readonly result: CommandResult;
+}
+
+function commandFingerprint(command: LabCommand, context: CommandContext): string {
+  const request = (() => {
+    switch (command.type) {
+      case "LOAD_MISSION":
+        return [command.type, command.missionId];
+      case "STAGE_PATCH":
+        return [
+          command.type,
+          command.patch.id,
+          command.patch.layer,
+          command.patch.hypothesis,
+        ];
+      case "PROMOTE":
+      case "REJECT":
+        return [command.type, command.comparedRevision];
+      case "RUN_BASELINE":
+      case "RUN_CANDIDATE_SUITE":
+      case "RESET":
+        return [command.type];
+    }
+  })();
+
+  return JSON.stringify([context.actor, context.source, request]);
+}
+
 function eventMeta(context: CommandContext, index: number) {
   return {
     id: `${context.commandId}:${index}`,
@@ -92,7 +122,7 @@ export function createCommandService({
   effects,
   ids,
 }: CommandServiceDependencies): CommandService {
-  const completed = new Map<string, CommandResult>();
+  const completed = new Map<string, CompletedCommand>();
   let activeCommandId: string | null = null;
 
   async function buildEvents(
@@ -208,9 +238,16 @@ export function createCommandService({
       assertCommandId(context);
       abortIfRequested(context);
 
+      const fingerprint = commandFingerprint(command, context);
       const replay = completed.get(context.commandId);
       if (replay) {
-        return { ...replay, replayed: true };
+        if (replay.fingerprint !== fingerprint) {
+          throw new LabDomainError(
+            "INVALID_INPUT",
+            `Command ID ${context.commandId} was already used for a different request. Use a new command ID for this command, actor, or source.`,
+          );
+        }
+        return { ...replay.result, replayed: true };
       }
 
       if (activeCommandId) {
@@ -233,7 +270,7 @@ export function createCommandService({
           events,
           replayed: false,
         };
-        completed.set(context.commandId, result);
+        completed.set(context.commandId, { fingerprint, result });
         return result;
       } catch (error) {
         throw commandFailure(command, stableState, error);

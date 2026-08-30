@@ -20,18 +20,44 @@ await mkdir(videoDir, { recursive: true });
 
 const server = spawn(
   process.execPath,
-  [path.join(root, "node_modules", "vite", "bin", "vite.js"), "--host", "127.0.0.1", "--port", "4173"],
+  [
+    path.join(root, "node_modules", "vite", "bin", "vite.js"),
+    "preview",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "4173",
+    "--strictPort",
+  ],
   { cwd: root, stdio: ["ignore", "pipe", "pipe"] },
 );
+
+let serverFailure;
+server.once("error", (error) => {
+  serverFailure = error;
+});
+server.once("exit", (code, signal) => {
+  if (code !== 0 && code !== null) {
+    serverFailure = new Error(`Proof server exited with code ${code}.`);
+  } else if (signal && signal !== "SIGTERM") {
+    serverFailure = new Error(`Proof server exited after signal ${signal}.`);
+  }
+});
 
 async function waitForApp() {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
+    if (serverFailure) throw serverFailure;
     try {
       const response = await fetch(appUrl);
-      if (response.ok) return;
+      const html = await response.text();
+      if (
+        response.ok
+        && html.includes("<title>Agent Harness Lab</title>")
+        && html.includes('id="root"')
+      ) return;
     } catch {
-      // The development server is still starting.
+      // The production preview server is still starting.
     }
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
