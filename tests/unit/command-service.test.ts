@@ -145,6 +145,27 @@ describe("command service", () => {
     expect(store.getState()).toBe(first.state);
   });
 
+  it("rejects a completed command ID after the workspace advances", async () => {
+    const { store, service } = createHarness();
+    await service.dispatch(
+      { type: "LOAD_MISSION", missionId: "handoff" },
+      context("historical-load"),
+    );
+    await service.dispatch(
+      { type: "LOAD_MISSION", missionId: "completion" },
+      context("current-load"),
+    );
+    const current = store.getState();
+
+    await expect(
+      service.dispatch(
+        { type: "LOAD_MISSION", missionId: "handoff" },
+        context("historical-load"),
+      ),
+    ).rejects.toMatchObject({ code: "STALE_REVISION" });
+    expect(store.getState()).toBe(current);
+  });
+
   it("rejects overlapping commands while a run is active", async () => {
     let release: (() => void) | undefined;
     const waiting = new Promise<typeof baselineResult>((resolve) => {

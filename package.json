@@ -10,11 +10,13 @@
     "typecheck": "tsc --noEmit --pretty false",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
+    "test:contract": "vitest run tests/contract",
     "test:e2e": "npm run build && playwright test",
-    "test:all": "npm run typecheck && npm run test:unit && npm run test:e2e",
+    "test:all": "npm run typecheck && npm run test:unit && npm run test:contract && npm run test:e2e",
     "proof:pr1": "npm run build && node scripts/capture-proof.mjs pr-01",
     "proof:pr2": "npm run build && node scripts/capture-proof.mjs pr-02",
-    "proof:pr3": "npm run build && node scripts/capture-proof.mjs pr-03"
+    "proof:pr3": "npm run build && node scripts/capture-proof.mjs pr-03",
+    "proof:pr4": "npm run build && node scripts/capture-proof.mjs pr-04"
   },
   "dependencies": {
     "react": "^19.1.1",

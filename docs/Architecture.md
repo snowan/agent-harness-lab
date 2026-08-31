@@ -411,7 +411,8 @@ The JSON receipt is a portable review artifact, not a deployment instruction.
   "harnesses": { "baseline": "1.3", "candidate": "1.4-rc" },
   "candidate": {
     "layer": "skill-trigger+completion-contract",
-    "hypothesis": "...",
+    "hypothesisExcerpt": "...",
+    "hypothesisTruncated": false,
     "diff_digest": "sha256:..."
   },
   "runs": [],
@@ -422,7 +423,7 @@ The JSON receipt is a portable review artifact, not a deployment instruction.
 }
 ```
 
-The receipt builder validates against a checked-in JSON Schema. It rejects unsupported values and strips fields that are not in the schema. Free-form hypothesis text is bounded and serialized as data.
+PR 4 returns a bounded `agent-harness-lab-receipt/0.1` view through WebMCP so an agent can carry the current evidence forward without downloading or deciding. Its external hypothesis excerpt is capped by serialized cost and paired with the evaluated patch digest; the full draft remains visible in the local UI. PR 5 adds the checked-in JSON Schema, allowlist validation, downloadable artifact, canonical receipt digest, and persistence recovery.
 
 ## 14. WebMCP adapter
 
@@ -439,7 +440,9 @@ The adapter registers:
 - `compare_harnesses`
 - `export_evidence_receipt`
 
-Registration uses `document.modelContext.registerTool()` behind feature detection. An `AbortController` owns the lifecycle so hot reload or page teardown cannot leave duplicate tools.
+Registration uses `document.modelContext.registerTool()` behind feature detection. The implementation follows the [26 August 2026 WebMCP draft](https://webmachinelearning.github.io/webmcp/): each imperative tool supplies a name, display title, description, JSON Schema, annotations, and an async executor that receives a per-call abort signal. One registration `AbortController` owns all eight tools so hot reload or page teardown cannot leave duplicates. Registration is same-page only; the adapter does not pass `exposedTo`.
+
+The browser draft does not yet make JSON Schema enforcement a dependable application security boundary. `src/webmcp/validate.ts` therefore rejects non-object input, unknown properties, invalid enums, non-integer cursors, malformed retry keys, and hypotheses outside 1–280 characters before a selector or command runs. This follows [Chrome's current WebMCP security guidance](https://developer.chrome.com/docs/ai/webmcp/secure-tools) while keeping the domain guard as a second boundary.
 
 ### 14.2 Result envelope
 
@@ -447,16 +450,16 @@ Every executor returns a bounded structure:
 
 ```ts
 type ToolResult<T> =
-  | { ok: true; data: T; state: LabStateSummary }
-  | { ok: false; error: DomainErrorView; state: LabStateSummary };
+  | { ok: true; tool: ToolName; data: T }
+  | { ok: false; tool: ToolName; error: DomainErrorView; safeState: LabStateSummary };
 ```
 
-Tool results do not return the entire store. Trace reads require a run identifier and optional cursor/limit. The MVP fixtures are small, but the bounded contract prevents a future imported trace from flooding agent context.
+Tool results do not return the entire store. Trace reads require a run role and accept an offset plus a maximum three-fact limit. The executor measures every success and failure envelope and refuses to return one above 1,500 serialized characters, matching Chrome's current guidance; contract tests include control characters, lone surrogates, a maximum-length hypothesis, and a human decision. Mutation tools accept an optional validated `request_id`; caller keys and generated keys use separate namespaces, and reusing a caller key for the same tool and arguments returns the prior command result instead of committing twice.
 
 ### 14.3 Security annotations and boundaries
 
 - State, trace, comparison, and receipt reads use `readOnlyHint`.
-- Imported content will use an untrusted-content annotation when that capability is available; built-in fixture text is still escaped before rendering.
+- State and receipt reads use `untrustedContentHint` because they may return a human- or agent-authored causal hypothesis. Built-in trace and comparison facts remain author-declared fixture data.
 - Tool descriptions state side effects and explicitly say when an operation does not promote or deploy.
 - Unknown properties are rejected.
 - Tool names are narrow domain verbs rather than generic script or fetch capabilities.
@@ -490,14 +493,14 @@ Running state, dialog state, focus, toast messages, and WebMCP registration stat
 Domain errors are typed and user-safe:
 
 - `INVALID_INPUT`
-- `UNKNOWN_MISSION`
 - `ILLEGAL_TRANSITION`
 - `ACTOR_NOT_AUTHORIZED`
 - `RUN_ALREADY_ACTIVE`
 - `STALE_REVISION`
-- `RECEIPT_INVALID`
+- `COMMAND_ABORTED`
+- `COMMAND_FAILED`
 
-An error view includes a code, concise message, legal next actions, and current stable revision. Stack traces remain in development diagnostics and are not returned to WebMCP clients.
+An error view includes a code, concise bounded message, and a safe summary of the unchanged stable state. Unexpected internal errors become a generic `COMMAND_FAILED` response. Stack traces and raw exception details are not returned to WebMCP clients.
 
 One in-process command lock prevents overlapping runs. The command ID provides idempotency within the current page session: retrying a completed command ID returns its prior bounded result; retrying an active command ID joins or receives `RUN_ALREADY_ACTIVE`. The MVP has no cross-tab coordination; a later shared service would require durable idempotency keys and optimistic concurrency.
 

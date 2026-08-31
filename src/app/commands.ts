@@ -117,10 +117,9 @@ function commandFailure(
   if (isLabDomainError(error)) {
     return error;
   }
-  const message = error instanceof Error ? error.message : String(error);
   return new LabDomainError(
     "COMMAND_FAILED",
-    `${command.type} failed for mission ${state.missionId}: ${message}. The workspace remains at revision ${state.revision}; inspect the failure and retry.`,
+    `${command.type} could not complete for mission ${state.missionId}. The workspace remains at revision ${state.revision}; inspect local diagnostics and retry.`,
     error instanceof Error ? { cause: error } : undefined,
   );
 }
@@ -324,6 +323,13 @@ export function createCommandService({
           throw new LabDomainError(
             "INVALID_INPUT",
             `Command ID ${context.commandId} was already used for a different request. Use a new command ID for this command, actor, or source.`,
+          );
+        }
+        const currentState = store.getState();
+        if (currentState !== replay.result.state) {
+          throw new LabDomainError(
+            "STALE_REVISION",
+            `Command ID ${context.commandId} completed at revision ${replay.result.state.revision}, but the workspace is now revision ${currentState.revision}. Use a new command ID for new work.`,
           );
         }
         return { ...replay.result, replayed: true };

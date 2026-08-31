@@ -4,7 +4,7 @@
 
 Agent Harness Lab is a browser-native WebMCP workbench for evaluating changes to the system around an AI agent: instructions, skills, memory rules, tool policies, permissions, checkpoints, retry behavior, and completion gates.
 
-The challenge experience is designed for a person and an agent to use the same visible workspace: reproduce a failure, inspect its trajectory, stage one harness patch, run target and sealed fixtures, compare causal evidence, and make a promote-or-reject decision. The planned WebMCP adapter exposes eight structured tools; promotion and rejection remain human-only.
+The challenge experience is designed for a person and an agent to use the same visible workspace: reproduce a failure, inspect its trajectory, stage one harness patch, run target and sealed fixtures, compare causal evidence, and make a promote-or-reject decision. The page registers eight structured WebMCP tools when the browser supports the draft API; promotion and rejection remain human-only.
 
 ## Start here
 
@@ -15,7 +15,7 @@ The challenge experience is designed for a person and an agent to use the same v
   npm run dev
   ```
 
-- Run the complete verification suite with `npm run test:all`.
+- Run the complete verification suite with `npm run test:all`, or run the WebMCP contract harness alone with `npm run test:contract`.
 - Use the [interactive mockup](prototype/Agent%20Harness%20Lab.html) as the visual reference.
 - Read the [product requirements](docs/Agent%20Harness%20Lab%20PRD.md).
 - Review the [architecture](docs/Architecture.md) and [implementation plan](docs/Implementation%20Plan.md).
@@ -46,13 +46,17 @@ agent-harness-lab/
 ├── src/
 │   ├── app/                 # Commands, guards, store, selectors
 │   ├── domain/              # Pure state, transitions, graders, hashing
-│   └── scenarios/           # Immutable fixture contracts and facts
+│   ├── scenarios/           # Immutable fixture contracts and facts
+│   └── webmcp/              # Contracts, validation, executors, lifecycle
 └── tests/
+    ├── contract/            # Discovery, safety, output, lifecycle, parity
     ├── e2e/
     └── unit/
 ```
 
-The domain core is independent of React, browser storage, and WebMCP. Human controls already use the shared command service; the planned agent adapter will enter through that same boundary. Each command commits one complete stable revision or leaves the workspace unchanged.
+The domain core is independent of React, browser storage, and WebMCP. Human controls and WebMCP executors enter through the same command service. Each command commits one complete stable revision or leaves the workspace unchanged; successful agent commands appear immediately in the visible activity provenance as `agent · webmcp`.
+
+The adapter follows the current [`document.modelContext` WebMCP draft](https://webmachinelearning.github.io/webmcp/) and [Chrome's tool-security guidance](https://developer.chrome.com/docs/ai/webmcp/secure-tools). It validates inputs again at the application boundary, registers no cross-origin exposure, owns all registrations with one `AbortController`, and keeps each result at or below 1.5K serialized characters. Browsers without WebMCP keep the complete manual workflow.
 
 ## Submission boundary
 

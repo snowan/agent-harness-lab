@@ -69,14 +69,3 @@ export function getMissionCatalogEntry(
   if (!mission) throw new Error(`Unknown mission ${missionId}.`);
   return mission;
 }
-
-export const TOOL_CONTRACT_PREVIEW = [
-  { name: "get_lab_state", mode: "read", summary: "Read mission, phase, runs, patch, and decision." },
-  { name: "load_mission", mode: "command", summary: "Select one built-in failure fixture." },
-  { name: "run_baseline", mode: "command", summary: "Replay the original deterministic harness." },
-  { name: "inspect_trace", mode: "read", summary: "Read a bounded completed-run trace." },
-  { name: "stage_harness_patch", mode: "command", summary: "Stage the fixture patch and causal hypothesis." },
-  { name: "run_candidate_suite", mode: "command", summary: "Run the target plus two sealed trials." },
-  { name: "compare_harnesses", mode: "read", summary: "Compare five evidence signals and risks." },
-  { name: "export_evidence_receipt", mode: "read", summary: "Return a portable evidence record." },
-] as const;

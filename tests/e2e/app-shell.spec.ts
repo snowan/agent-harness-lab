@@ -1,6 +1,69 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
+const expectedWebMcpTools = [
+  "get_lab_state",
+  "load_mission",
+  "run_baseline",
+  "inspect_trace",
+  "stage_harness_patch",
+  "run_candidate_suite",
+  "compare_harnesses",
+  "export_evidence_receipt",
+] as const;
+
+async function installWebMcpHarness(page: Page) {
+  await page.addInitScript(() => {
+    type TestTool = {
+      readonly name: string;
+      readonly execute: (
+        input: Record<string, unknown>,
+        options: { readonly signal: AbortSignal },
+      ) => Promise<unknown>;
+    };
+    const tools = new Map<string, TestTool>();
+    const bridge = {
+      names: () => [...tools.keys()],
+      async invoke(name: string, input: Record<string, unknown>) {
+        const tool = tools.get(name);
+        if (!tool) throw new Error(`Tool ${name} is not registered.`);
+        return tool.execute(input, { signal: new AbortController().signal });
+      },
+    };
+    Object.defineProperty(document, "modelContext", {
+      configurable: true,
+      value: {
+        async registerTool(
+          tool: TestTool,
+          options?: { readonly signal?: AbortSignal },
+        ) {
+          tools.set(tool.name, tool);
+          options?.signal?.addEventListener("abort", () => tools.delete(tool.name), { once: true });
+        },
+      },
+    });
+    Object.defineProperty(window, "__webmcpHarness", {
+      configurable: true,
+      value: bridge,
+    });
+  });
+}
+
+async function invokeWebMcp(
+  page: Page,
+  name: string,
+  input: Record<string, unknown> = {},
+) {
+  return page.evaluate(async ({ toolName, toolInput }) => {
+    const bridge = (window as typeof window & {
+      __webmcpHarness: {
+        invoke: (name: string, input: Record<string, unknown>) => Promise<unknown>;
+      };
+    }).__webmcpHarness;
+    return bridge.invoke(toolName, toolInput);
+  }, { toolName: name, toolInput: input });
+}
+
 function monitorBrowser(page: Page) {
   const consoleErrors: string[] = [];
   const pageErrors: string[] = [];
@@ -97,6 +160,7 @@ test("completes the primary human promotion flow with derived evidence", async (
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Prove the harness change before you trust it." })).toBeVisible();
+  await expect(page.getByTestId("webmcp-runtime")).toHaveAttribute("data-state", "unavailable");
   await expect(page.getByTestId("phase")).toHaveText("mission loaded");
   await expect(page.getByTestId("revision")).toContainText("Revision 0");
   await expect(page.getByRole("button", { name: "Promote", exact: true })).toBeDisabled();
@@ -166,7 +230,7 @@ test("records a human rejection without discarding the comparison", async ({ pag
   expect(health.pageErrors).toEqual([]);
 });
 
-test("supports roving tabs, visible focus, and a modal contract preview", async ({ page }) => {
+test("supports roving tabs, visible focus, and the live contract dialog", async ({ page }) => {
   const health = monitorBrowser(page);
   await page.goto("/");
 
@@ -197,7 +261,7 @@ test("supports roving tabs, visible focus, and a modal contract preview", async 
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Close tool contracts" })).toBeFocused();
   await expect(dialog.locator(".contract")).toHaveCount(8);
-  await expect(dialog).toContainText("planned but not registered");
+  await expect(dialog).toContainText("WebMCP is unavailable in this browser");
   await expect(dialog).toContainText("there is no promotion or rejection tool");
 
   await page.keyboard.press("Shift+Tab");
@@ -206,10 +270,133 @@ test("supports roving tabs, visible focus, and a modal contract preview", async 
   await expect(dialog).toBeHidden();
   await expect(opener).toBeFocused();
 
-  const secondOpener = page.getByRole("button", { name: "Inspect planned contracts" });
+  const secondOpener = page.getByRole("button", { name: "Inspect live contracts" });
   await secondOpener.click();
   await dialog.getByRole("button", { name: "Close tool contracts" }).click();
   await expect(secondOpener).toBeFocused();
+  await expectNoPageOverflow(page);
+  expect(health.consoleErrors).toEqual([]);
+  expect(health.pageErrors).toEqual([]);
+});
+
+test("lets an agent run the shared WebMCP workflow while a human owns promotion", async ({ page }) => {
+  const health = monitorBrowser(page);
+  await installWebMcpHarness(page);
+  await page.goto("/");
+
+  const runtime = page.getByTestId("webmcp-runtime");
+  await expect(runtime).toHaveAttribute("data-state", "ready");
+  await expect(runtime).toContainText("WebMCP · 8 tools");
+  const discovered = await page.evaluate(() => (
+    (window as typeof window & { __webmcpHarness: { names: () => string[] } })
+      .__webmcpHarness.names()
+  ));
+  expect(discovered).toEqual(expectedWebMcpTools);
+  expect(discovered.join(" ")).not.toMatch(/promote|reject|deploy|execute_code|filesystem/);
+
+  const beforeIllegal = await page.getByTestId("revision").textContent();
+  const illegal = await invokeWebMcp(page, "run_candidate_suite", {
+    request_id: "browser-illegal-order",
+  });
+  expect(illegal).toMatchObject({ ok: false, error: { code: "ILLEGAL_TRANSITION" } });
+  await expect(page.getByTestId("phase")).toHaveText("mission loaded");
+  await expect(page.getByTestId("revision")).toHaveText(beforeIllegal ?? "");
+  await expect(page.getByTestId("webmcp-last-call")).toHaveAttribute("data-state", "failed");
+  await expect(page.getByRole("alert")).toContainText("ILLEGAL_TRANSITION");
+
+  const baseline = await invokeWebMcp(page, "run_baseline", { request_id: "browser-baseline" });
+  expect(baseline).toMatchObject({ ok: true, data: { phase: "baseline_failed", revision: 2 } });
+  expect(JSON.stringify(baseline).length).toBeLessThanOrEqual(1_500);
+  await expect(page.getByTestId("phase")).toHaveText("baseline failed");
+  await expect(page.getByTestId("revision")).toContainText("Revision 2");
+  await expect(page.getByTestId("webmcp-last-call")).toContainText("run_baseline");
+
+  const trace = await invokeWebMcp(page, "inspect_trace", { run: "baseline", limit: 2 });
+  expect(trace).toMatchObject({ ok: true, data: { run: "baseline", offset: 0 } });
+  expect(JSON.stringify(trace).length).toBeLessThanOrEqual(1_500);
+  await expect(page.getByTestId("revision")).toContainText("Revision 2");
+
+  const hypothesis = "The fixed completion gate should activate browser QA and require both receipts.";
+  const staged = await invokeWebMcp(page, "stage_harness_patch", {
+    request_id: "browser-stage",
+    hypothesis,
+  });
+  expect(staged).toMatchObject({ ok: true, data: { phase: "patch_staged", revision: 3 } });
+  await expect(page.getByTestId("phase")).toHaveText("patch staged");
+  await expect(page.getByRole("tab", { name: "Harness patch" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".candidate-summary")).toContainText(hypothesis);
+
+  const suite = await invokeWebMcp(page, "run_candidate_suite", { request_id: "browser-suite" });
+  expect(suite).toMatchObject({ ok: true, data: { phase: "compared", revision: 5 } });
+  await expect(page.getByTestId("phase")).toHaveText("compared");
+  await expect(page.getByRole("tab", { name: "Evidence matrix" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("table").locator("tbody tr")).toHaveCount(5);
+  await expect(page.locator(".sealed-card")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Promote", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Reject", exact: true })).toBeEnabled();
+
+  const agentBadges = page.locator(".activity-list .actor-badge");
+  await expect(agentBadges).toHaveCount(5);
+  await expect(agentBadges).toHaveText(["agent", "agent", "agent", "agent", "agent"]);
+  await expect(page.getByRole("region", { name: "Activity provenance" })).toContainText("webmcp");
+
+  const beforeInvalid = await page.getByTestId("revision").textContent();
+  const invalid = await invokeWebMcp(page, "run_candidate_suite", { unexpected: true });
+  expect(invalid).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
+  await expect(page.getByTestId("revision")).toHaveText(beforeInvalid ?? "");
+  await expect(page.getByTestId("webmcp-last-call")).toHaveAttribute("data-state", "failed");
+
+  const comparison = await invokeWebMcp(page, "compare_harnesses");
+  expect(comparison).toMatchObject({
+    ok: true,
+    data: { sealed: { passed: 2, total: 2 }, promotionIsHumanOnly: true },
+  });
+  expect(JSON.stringify(comparison).length).toBeLessThanOrEqual(1_500);
+
+  await page.getByRole("button", { name: "Promote", exact: true }).click();
+  await expect(page.getByTestId("phase")).toHaveText("promoted");
+  await expect(page.getByRole("heading", { name: "Candidate promoted by human" })).toBeVisible();
+  await expect(page.locator(".activity-list .actor-badge").first()).toHaveText("human");
+
+  const receipt = await invokeWebMcp(page, "export_evidence_receipt");
+  expect(receipt).toMatchObject({
+    ok: true,
+    data: {
+      decision: { outcome: "promoted", actor: "human", comparedRevision: 5 },
+      promotionIsHumanOnly: true,
+    },
+  });
+  expect(JSON.stringify(receipt).length).toBeLessThanOrEqual(1_500);
+
+  await expectAccessible(page);
+  await expectNoPageOverflow(page);
+  expect(health.consoleErrors).toEqual([]);
+  expect(health.pageErrors).toEqual([]);
+});
+
+test("resets a stale hypothesis draft when an agent reloads the same mission", async ({ page }) => {
+  const health = monitorBrowser(page);
+  await installWebMcpHarness(page);
+  await page.goto("/");
+
+  await invokeWebMcp(page, "run_baseline", { request_id: "same-mission-baseline-1" });
+  await page.getByRole("button", { name: "Review candidate patch" }).click();
+  const field = page.getByLabel("Causal hypothesis");
+  const fixtureHypothesis = await field.inputValue();
+  await field.fill("A stale local draft that must not survive a clean mission reload.");
+
+  const loaded = await invokeWebMcp(page, "load_mission", {
+    mission_id: "completion",
+    request_id: "same-mission-load",
+  });
+  expect(loaded).toMatchObject({ ok: true, data: { phase: "mission_loaded", revision: 3 } });
+  await expect(page.getByRole("tab", { name: "Trajectory" })).toHaveAttribute("aria-selected", "true");
+  await invokeWebMcp(page, "run_baseline", { request_id: "same-mission-baseline-2" });
+  await page.getByRole("button", { name: "Review candidate patch" }).click();
+  await expect(page.getByLabel("Causal hypothesis")).toHaveValue(fixtureHypothesis);
+  await expect(page.getByTestId("webmcp-last-call")).toHaveAttribute("data-state", "succeeded");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expectAccessible(page);
   await expectNoPageOverflow(page);
   expect(health.consoleErrors).toEqual([]);
   expect(health.pageErrors).toEqual([]);
@@ -282,7 +469,7 @@ test("reflows at a 200 percent browser-zoom proxy", async ({ page }, testInfo) =
   await expect(decision).toBeFocused();
   await expect(decision).toBeEnabled();
 
-  await page.getByRole("button", { name: "Inspect planned contracts" }).click();
+  await page.getByRole("button", { name: "Inspect live contracts" }).click();
   const dialog = page.getByRole("dialog", { name: "Agent-facing tool contracts" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Close tool contracts" })).toBeFocused();

@@ -4,11 +4,22 @@ import path from "node:path";
 import { chromium } from "@playwright/test";
 
 const proofId = process.argv[2];
-const supportedProofs = new Set(["pr-01", "pr-02", "pr-03"]);
+const supportedProofs = new Set(["pr-01", "pr-02", "pr-03", "pr-04"]);
 
 if (!supportedProofs.has(proofId)) {
-  throw new Error("Use `npm run proof:pr1`, `npm run proof:pr2`, or `npm run proof:pr3`.");
+  throw new Error("Use `npm run proof:pr1`, `npm run proof:pr2`, `npm run proof:pr3`, or `npm run proof:pr4`.");
 }
+
+const expectedWebMcpTools = [
+  "get_lab_state",
+  "load_mission",
+  "run_baseline",
+  "inspect_trace",
+  "stage_harness_patch",
+  "run_candidate_suite",
+  "compare_harnesses",
+  "export_evidence_receipt",
+];
 
 const root = process.cwd();
 const outputDir = path.join(root, "output", "playwright", proofId);
@@ -98,6 +109,43 @@ async function assertHealthy(page, health) {
       ].join(" | ")}`,
     );
   }
+}
+
+async function installWebMcpHarness(page) {
+  await page.addInitScript(() => {
+    const tools = new Map();
+    Object.defineProperty(document, "modelContext", {
+      configurable: true,
+      value: {
+        async registerTool(tool, options) {
+          tools.set(tool.name, tool);
+          options?.signal?.addEventListener(
+            "abort",
+            () => tools.delete(tool.name),
+            { once: true },
+          );
+        },
+      },
+    });
+    Object.defineProperty(window, "__webmcpHarness", {
+      configurable: true,
+      value: {
+        names: () => [...tools.keys()],
+        async invoke(name, input = {}) {
+          const tool = tools.get(name);
+          if (!tool) throw new Error(`Tool ${name} is not registered.`);
+          return tool.execute(input, { signal: new AbortController().signal });
+        },
+      },
+    });
+  });
+}
+
+async function invokeWebMcp(page, name, input = {}) {
+  return page.evaluate(
+    ({ toolName, toolInput }) => window.__webmcpHarness.invoke(toolName, toolInput),
+    { toolName: name, toolInput: input },
+  );
 }
 
 async function preparePr1Page(page, missionId) {
@@ -222,15 +270,174 @@ async function preparePr3Page(page, promote) {
   }
 }
 
+async function runPr4AgentComparison(page, paced = false) {
+  const pause = async (duration = 500) => {
+    if (paced) await page.waitForTimeout(duration);
+  };
+  const expectResult = (result, phase, revision, tool) => {
+    if (!result?.ok || result.data?.phase !== phase || result.data?.revision !== revision) {
+      throw new Error(
+        `PR4 ${tool} returned an unexpected result: ${JSON.stringify(result)}.`,
+      );
+    }
+  };
+
+  await page.waitForFunction(() =>
+    document.querySelector('[data-testid="webmcp-runtime"]')?.getAttribute("data-state") === "ready"
+  );
+  const runtime = await page.getByTestId("webmcp-runtime").textContent();
+  const discovered = await page.evaluate(() => window.__webmcpHarness.names());
+  if (
+    runtime?.trim() !== "WebMCP · 8 tools"
+    || JSON.stringify(discovered) !== JSON.stringify(expectedWebMcpTools)
+    || discovered.some((name) => /promote|reject|deploy|execute_code|filesystem/.test(name))
+  ) {
+    throw new Error(
+      `PR4 proof expected the eight bounded WebMCP tools and no decision or broad-execution tools; received ${runtime}/${JSON.stringify(discovered)}.`,
+    );
+  }
+
+  await pause(700);
+  const baseline = await invokeWebMcp(page, "run_baseline", {
+    request_id: "proof-baseline",
+  });
+  expectResult(baseline, "baseline_failed", 2, "run_baseline");
+  await page.waitForFunction(() =>
+    document.querySelector('[data-testid="phase"]')?.textContent?.trim() === "baseline failed"
+  );
+  await pause(650);
+  if (paced) {
+    await page.getByRole("heading", { name: "Baseline trajectory" }).scrollIntoViewIfNeeded();
+    await pause(850);
+  }
+
+  const trace = await invokeWebMcp(page, "inspect_trace", {
+    run: "baseline",
+    limit: 2,
+  });
+  if (!trace?.ok || trace.data?.run !== "baseline" || trace.data?.facts?.length !== 2) {
+    throw new Error(`PR4 inspect_trace returned an unexpected result: ${JSON.stringify(trace)}.`);
+  }
+
+  const hypothesis = "The fixed completion gate should activate browser QA and require both receipts.";
+  const staged = await invokeWebMcp(page, "stage_harness_patch", {
+    request_id: "proof-stage",
+    hypothesis,
+  });
+  expectResult(staged, "patch_staged", 3, "stage_harness_patch");
+  await page.waitForFunction(() =>
+    document.querySelector('[data-testid="phase"]')?.textContent?.trim() === "patch staged"
+  );
+  await pause(650);
+  if (paced) {
+    await page.locator(".candidate-summary").scrollIntoViewIfNeeded();
+    await pause(850);
+  }
+
+  const suite = await invokeWebMcp(page, "run_candidate_suite", {
+    request_id: "proof-suite",
+  });
+  expectResult(suite, "compared", 5, "run_candidate_suite");
+  await page.waitForFunction(() =>
+    document.querySelector('[data-testid="phase"]')?.textContent?.trim() === "compared"
+  );
+  const comparison = await invokeWebMcp(page, "compare_harnesses");
+  if (
+    !comparison?.ok
+    || comparison.data?.sealed?.passed !== 2
+    || comparison.data?.sealed?.total !== 2
+    || comparison.data?.promotionIsHumanOnly !== true
+  ) {
+    throw new Error(
+      `PR4 compare_harnesses returned an unexpected result: ${JSON.stringify(comparison)}.`,
+    );
+  }
+  await pause(900);
+
+  const phase = await page.getByTestId("phase").textContent();
+  const revision = await page.getByTestId("revision").textContent();
+  const rows = await page.getByRole("table").locator("tbody tr").count();
+  const sealed = await page.locator(".sealed-card").count();
+  const promoteEnabled = await page.getByRole("button", { name: "Promote", exact: true }).isEnabled();
+  const actors = await page.locator(".activity-list .actor-badge").allTextContents();
+  const activity = await page.getByRole("region", { name: "Activity provenance" }).textContent();
+  if (
+    phase?.trim() !== "compared"
+    || !revision?.includes("Revision 5")
+    || rows !== 5
+    || sealed !== 2
+    || !promoteEnabled
+    || actors.length !== 5
+    || actors.some((actor) => actor.trim() !== "agent")
+    || !activity?.includes("webmcp")
+  ) {
+    throw new Error(
+      `PR4 proof expected compared revision 5, five signals, two sealed trials, five agent-attributed events, and an enabled human decision; received ${phase}/${revision}/${rows}/${sealed}/${promoteEnabled}/${JSON.stringify(actors)}.`,
+    );
+  }
+}
+
+async function recordPr4HumanDecision(page, paced = false) {
+  const pause = async (duration = 500) => {
+    if (paced) await page.waitForTimeout(duration);
+  };
+
+  await page.getByTestId("webmcp-runtime").click();
+  const dialog = page.getByRole("dialog", { name: "Agent-facing tool contracts" });
+  await dialog.waitFor();
+  if (
+    await dialog.locator(".contract").count() !== 8
+    || !(await dialog.textContent())?.includes("there is no promotion or rejection tool")
+  ) {
+    throw new Error("PR4 proof expected eight live contracts and an explicit human-decision boundary.");
+  }
+  await pause(900);
+  await dialog.getByRole("button", { name: "Close tool contracts" }).click();
+
+  const promote = page.getByRole("button", { name: "Promote", exact: true });
+  await promote.scrollIntoViewIfNeeded();
+  await pause(650);
+  await promote.click();
+  const heading = page.getByRole("heading", { name: "Candidate promoted by human" });
+  await heading.waitFor();
+  await heading.scrollIntoViewIfNeeded();
+  await pause(850);
+
+  const receipt = await invokeWebMcp(page, "export_evidence_receipt");
+  const firstActor = await page.locator(".activity-list .actor-badge").first().textContent();
+  const phase = await page.getByTestId("phase").textContent();
+  const revision = await page.getByTestId("revision").textContent();
+  if (
+    phase?.trim() !== "promoted"
+    || !revision?.includes("Revision 6")
+    || firstActor?.trim() !== "human"
+    || !receipt?.ok
+    || receipt.data?.decision?.actor !== "human"
+    || receipt.data?.decision?.comparedRevision !== 5
+  ) {
+    throw new Error(
+      `PR4 proof recorded an unexpected human decision or receipt: ${phase}/${revision}/${firstActor}/${JSON.stringify(receipt)}.`,
+    );
+  }
+}
+
+async function preparePr4Page(page, promote) {
+  await runPr4AgentComparison(page);
+  if (promote) await recordPr4HumanDecision(page);
+}
+
 async function preparePage(page, variant) {
   const health = monitorPage(page);
+  if (proofId === "pr-04") await installWebMcpHarness(page);
   await page.goto(appUrl);
   if (proofId === "pr-01") {
     await preparePr1Page(page, variant === "mobile" ? "authority" : "handoff");
   } else if (proofId === "pr-02") {
     await preparePr2Page(page);
-  } else {
+  } else if (proofId === "pr-03") {
     await preparePr3Page(page, variant === "mobile");
+  } else {
+    await preparePr4Page(page, variant === "mobile");
   }
   await assertHealthy(page, health);
 }
@@ -244,6 +451,7 @@ try {
   });
   const page = await context.newPage();
   const videoHealth = monitorPage(page);
+  if (proofId === "pr-04") await installWebMcpHarness(page);
   await page.goto(appUrl);
   if (proofId === "pr-01") {
     await page.waitForTimeout(550);
@@ -254,11 +462,16 @@ try {
     await preparePr2Page(page);
     await page.locator('[aria-labelledby="baseline-trace-title"]').scrollIntoViewIfNeeded();
     await page.waitForTimeout(1_400);
-  } else {
+  } else if (proofId === "pr-03") {
     await runPr3Comparison(page, true);
     await page.getByRole("table").scrollIntoViewIfNeeded();
     await page.waitForTimeout(900);
     await recordPr3Decision(page);
+  } else {
+    await runPr4AgentComparison(page, true);
+    await page.getByRole("table").scrollIntoViewIfNeeded();
+    await page.waitForTimeout(900);
+    await recordPr4HumanDecision(page, true);
   }
   await assertHealthy(page, videoHealth);
   await context.close();
@@ -270,7 +483,9 @@ try {
     ? "app-shell.webm"
     : proofId === "pr-02"
       ? "baseline-engine.webm"
-      : "human-decision-flow.webm";
+      : proofId === "pr-03"
+        ? "human-decision-flow.webm"
+        : "webmcp-collaboration-flow.webm";
   await copyFile(path.join(videoDir, video), path.join(outputDir, videoName));
 
   const desktopContext = await browser.newContext({
@@ -285,7 +500,9 @@ try {
         ? "app-shell.png"
         : proofId === "pr-02"
           ? "baseline-engine-desktop.png"
-          : "human-decision-evidence-desktop.png",
+          : proofId === "pr-03"
+            ? "human-decision-evidence-desktop.png"
+            : "webmcp-agent-evidence-desktop.png",
     ),
     fullPage: true,
   });
@@ -305,7 +522,9 @@ try {
         ? "app-shell-mobile.png"
         : proofId === "pr-02"
           ? "baseline-engine-mobile-320.png"
-          : "human-decision-mobile-320.png",
+          : proofId === "pr-03"
+            ? "human-decision-mobile-320.png"
+            : "webmcp-human-boundary-mobile-320.png",
     ),
     fullPage: true,
   });
