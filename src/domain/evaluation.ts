@@ -644,7 +644,19 @@ function interpretTrial(
 ): readonly FactTemplate[] {
   switch (scenario.engine) {
     case "completion-v1":
-      return completionFacts(trial.initialState, harness.policy);
+      return completionFacts(
+        trial.initialState as CompletionTrialInput,
+        harness.policy as CompletionHarnessPolicy,
+      );
+    case "declared-facts-v1": {
+      const declared = trial.declaredFacts?.[harness.role];
+      if (!declared) {
+        throw new Error(
+          `Scenario ${scenario.id} trial ${trial.id} does not declare ${harness.role} facts.`,
+        );
+      }
+      return declared;
+    }
   }
 }
 

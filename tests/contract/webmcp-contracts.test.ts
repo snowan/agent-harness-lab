@@ -42,7 +42,7 @@ describe("WebMCP discovery contracts", () => {
     }
   });
 
-  it("marks only true reads as read-only and labels user-authored receipt content", () => {
+  it("marks only true reads as read-only and labels only authored state content as untrusted", () => {
     const reads = WEBMCP_TOOL_CONTRACTS
       .filter((tool) => tool.annotations.readOnlyHint)
       .map((tool) => tool.name);
@@ -56,7 +56,7 @@ describe("WebMCP discovery contracts", () => {
       WEBMCP_TOOL_CONTRACTS
         .filter((tool) => tool.annotations.untrustedContentHint)
         .map((tool) => tool.name),
-    ).toEqual(["get_lab_state", "export_evidence_receipt"]);
+    ).toEqual(["get_lab_state"]);
   });
 
   it("does not discover human decisions or expansive capabilities", () => {

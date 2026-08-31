@@ -53,7 +53,7 @@ export const WEBMCP_TOOL_CONTRACTS: readonly WebMcpToolContract[] = [
     title: "Load mission",
     mode: "command",
     summary: "Select one built-in harness failure fixture and start a clean workspace.",
-    description: "Load one built-in harness failure mission into a clean local workspace. Catalog-only missions remain non-executable until their fixtures ship.",
+    description: "Load one of the four built-in deterministic harness failure missions into a clean local workspace.",
     inputSchema: {
       type: "object",
       properties: {
@@ -159,12 +159,12 @@ export const WEBMCP_TOOL_CONTRACTS: readonly WebMcpToolContract[] = [
   },
   {
     name: "export_evidence_receipt",
-    title: "Export evidence receipt",
+    title: "Read receipt summary",
     mode: "read",
-    summary: "Return a bounded versioned evidence receipt without downloading or deciding.",
-    description: "Return a bounded versioned JSON evidence receipt for the current local workspace. This read does not download, promote, reject, or deploy anything.",
+    summary: "Return a bounded digest-bearing receipt summary without downloading or deciding.",
+    description: "Build and validate the formal receipt, then return its bounded digest-bearing summary. This read does not download, promote, reject, or deploy anything.",
     inputSchema: emptyInputSchema,
-    annotations: { readOnlyHint: true, untrustedContentHint: true },
+    annotations: { readOnlyHint: true, untrustedContentHint: false },
   },
 ] as const;
 

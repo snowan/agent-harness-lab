@@ -16,7 +16,8 @@
     "proof:pr1": "npm run build && node scripts/capture-proof.mjs pr-01",
     "proof:pr2": "npm run build && node scripts/capture-proof.mjs pr-02",
     "proof:pr3": "npm run build && node scripts/capture-proof.mjs pr-03",
-    "proof:pr4": "npm run build && node scripts/capture-proof.mjs pr-04"
+    "proof:pr4": "npm run build && node scripts/capture-proof.mjs pr-04",
+    "proof:pr5": "npm run build && node scripts/capture-proof.mjs pr-05"
   },
   "dependencies": {
     "react": "^19.1.1",

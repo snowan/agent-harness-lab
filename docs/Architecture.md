@@ -287,7 +287,7 @@ sequenceDiagram
     end
 ```
 
-Inputs are validated before the domain transition. A command either commits one stable revision or commits nothing. UI loading and error indicators are transient adapter state, not canonical provenance and not evidence that a domain run completed. PR 4 may expose bounded adapter activity for WebMCP usability, but it must remain distinct from the successful domain event log and evidence receipt.
+Inputs are validated before the domain transition. A command either commits one stable revision or commits nothing. UI loading and error indicators are transient adapter state, not canonical provenance and not evidence that a domain run completed. The WebMCP status surface exposes bounded adapter activity for usability while keeping it distinct from the successful domain event log and evidence receipt.
 
 ## 10. End-to-end collaboration flow
 
@@ -401,29 +401,45 @@ Facts and assertions are append-only within a completed run. A later human decis
 
 ## 13. Receipt design
 
-The JSON receipt is a portable review artifact, not a deployment instruction.
+The JSON receipt is a portable review artifact, not a deployment instruction. The following is an abridged structural view, not a schema-valid example:
 
 ```json
 {
-  "schema": "agent-harness-lab-receipt/0.1",
-  "fixture": true,
-  "scenario": { "id": "completion", "version": "1" },
-  "harnesses": { "baseline": "1.3", "candidate": "1.4-rc" },
+  "schemaVersion": "1.0.0",
+  "createdAt": "2026-08-30T18:00:00.000Z",
+  "fixture": {
+    "kind": "built-in-deterministic",
+    "deterministic": true,
+    "disclosure": "Built-in deterministic fixture"
+  },
+  "scenario": { "id": "completion", "version": "1.0.0" },
+  "harnesses": {
+    "baseline": { "id": "completion-harness-baseline", "version": "1.3.0" },
+    "candidate": { "id": "completion-harness-candidate", "version": "1.4.0-rc.1" }
+  },
   "candidate": {
     "layer": "skill-trigger+completion-contract",
-    "hypothesisExcerpt": "...",
-    "hypothesisTruncated": false,
-    "diff_digest": "sha256:..."
+    "diff": ["..."],
+    "diffDigest": "sha256:...",
+    "evaluatedPatchDigest": "sha256:...",
+    "hypothesis": "..."
   },
-  "runs": [],
-  "signals": {},
-  "unresolved_risks": [],
-  "decision": { "outcome": "promoted", "actor": "human" },
-  "limitations": ["Built-in deterministic fixture", "No live model"]
+  "runs": { "baseline": {}, "target": {}, "sealed": [{}, {}], "suite": {} },
+  "signals": [],
+  "unresolvedRisks": [],
+  "decision": {
+    "outcome": "promoted",
+    "actor": "human",
+    "comparedRevision": 5,
+    "recordedAt": "2026-08-30T17:59:00.000Z"
+  },
+  "limitations": ["Built-in deterministic fixture", "No live model"],
+  "provenance": { "events": [] },
+  "receiptDigest": "sha256:..."
 }
 ```
 
-PR 4 returns a bounded `agent-harness-lab-receipt/0.1` view through WebMCP so an agent can carry the current evidence forward without downloading or deciding. Its external hypothesis excerpt is capped by serialized cost and paired with the evaluated patch digest; the full draft remains visible in the local UI. PR 5 adds the checked-in JSON Schema, allowlist validation, downloadable artifact, canonical receipt digest, and persistence recovery.
+`src/receipts/receipt.schema.json` is the canonical portable-output contract. Every object shape rejects additional properties; the builder includes the full visible candidate diff and hypothesis, full run facts and assertion results with evidence references, fixture limits, current-workspace provenance, and any timestamped human decision. Verification validates the schema and recomputes `receiptDigest` over the canonical evidence payload; the export-only `createdAt` field is deliberately excluded so unchanged evidence keeps the same digest. The visible download is user-initiated. WebMCP builds and validates the same formal receipt but returns only a bounded `agent-harness-lab-receipt/1.0.0` summary with its digest and no authored hypothesis; it does not download, decide, or deploy.
 
 ## 14. WebMCP adapter
 
@@ -459,7 +475,7 @@ Tool results do not return the entire store. Trace reads require a run role and 
 ### 14.3 Security annotations and boundaries
 
 - State, trace, comparison, and receipt reads use `readOnlyHint`.
-- State and receipt reads use `untrustedContentHint` because they may return a human- or agent-authored causal hypothesis. Built-in trace and comparison facts remain author-declared fixture data.
+- State reads use `untrustedContentHint` because they may return a bounded excerpt of a human- or agent-authored causal hypothesis. Receipt, trace, and comparison tools return only allowlisted fixture data and digests.
 - Tool descriptions state side effects and explicitly say when an operation does not promote or deploy.
 - Unknown properties are rejected.
 - Tool names are narrow domain verbs rather than generic script or fetch capabilities.
@@ -482,11 +498,13 @@ On boot:
 
 1. Parse the snapshot as untrusted data.
 2. Validate schema and catalog version.
-3. Recompute derived signal summaries.
-4. Restore only a stable state.
-5. Fall back to the default mission on any error.
+3. Project allowlisted event fields and replay them through the domain reducer.
+4. Compare the rebuilt canonical state with the stored stable state.
+5. Restore only a stable state; discard stale or invalid data and fall back cleanly.
 
 Running state, dialog state, focus, toast messages, and WebMCP registration state are never persisted.
+
+Replay validation detects malformed shapes, impossible actor/source pairs, illegal transitions, and evidence that no longer matches reviewed fixture digests. The browser snapshot has no external signature or trusted anchor, so it does not prove that every valid actor/source label is original. Receipts disclose this provenance without overstating it as signed audit evidence.
 
 ## 16. Error handling and concurrency
 
@@ -502,7 +520,7 @@ Domain errors are typed and user-safe:
 
 An error view includes a code, concise bounded message, and a safe summary of the unchanged stable state. Unexpected internal errors become a generic `COMMAND_FAILED` response. Stack traces and raw exception details are not returned to WebMCP clients.
 
-One in-process command lock prevents overlapping runs. The command ID provides idempotency within the current page session: retrying a completed command ID returns its prior bounded result; retrying an active command ID joins or receives `RUN_ALREADY_ACTIVE`. The MVP has no cross-tab coordination; a later shared service would require durable idempotency keys and optimistic concurrency.
+One in-process command lock prevents overlapping runs. The command ID provides idempotency within the current page session: retrying a completed command ID returns its prior bounded result; retrying an active command ID joins or receives `RUN_ALREADY_ACTIVE`. Async receipt export captures one stable revision for build, validation, and projection, then rejects `STALE_REVISION` if the workspace changes before the download or WebMCP response is released. The MVP has no cross-tab coordination; a later shared service would require durable idempotency keys and optimistic concurrency.
 
 ## 17. Trust boundaries and threat model
 

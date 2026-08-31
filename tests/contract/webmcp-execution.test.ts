@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { WEBMCP_OUTPUT_BUDGET } from "../../src/webmcp/execute";
+import { buildEvidenceReceipt } from "../../src/receipts/build-receipt";
 import type { WebMcpToolName } from "../../src/webmcp/contracts";
 import { createWebMcpHarness } from "./test-harness";
 
@@ -63,7 +64,9 @@ describe("WebMCP executor", () => {
     expect(receipt).toMatchObject({
       ok: true,
       data: {
-        schema: "agent-harness-lab-receipt/0.1",
+        schema: "agent-harness-lab-receipt/1.0.0",
+        receiptDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        createdAt: "2026-08-30T12:01:00.000Z",
         fixture: true,
         decision: null,
         provenance: { agentCommands: 3, humanCommands: 0 },
@@ -202,10 +205,15 @@ describe("WebMCP executor", () => {
     expect(receipt).toMatchObject({
       ok: true,
       data: {
-        patch: { hypothesisTruncated: true },
+        patch: {
+          id: "completion.browser-proof-gate",
+          layer: "skill-trigger+completion-contract",
+          evaluatedDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        },
         decision: { outcome: "promoted", actor: "human", comparedRevision: 5 },
       },
     });
+    expect(JSON.stringify(receipt)).not.toContain(hypothesis);
   });
 
   it("does not disclose an unexpected effect error through WebMCP", async () => {
@@ -235,18 +243,104 @@ describe("WebMCP executor", () => {
     expect(harness.store.getState()).toBe(initial);
   });
 
-  it("loads catalog-only missions but blocks their unimplemented runs truthfully", async () => {
+  it("runs a second fixture and requires comparison before reading its receipt", async () => {
     const harness = createWebMcpHarness();
     const loaded = await call(harness, "load_mission", {
       mission_id: "handoff",
       request_id: "catalog-handoff",
     });
     expect(loaded).toMatchObject({ ok: true, data: { missionId: "handoff", revision: 1 } });
-    const catalogState = harness.store.getState();
     const run = await call(harness, "run_baseline", { request_id: "catalog-run" });
-    expect(run).toMatchObject({ ok: false, error: { code: "COMMAND_FAILED" } });
-    expect(harness.store.getState()).toBe(catalogState);
+    expect(run).toMatchObject({
+      ok: true,
+      data: {
+        missionId: "handoff",
+        phase: "baseline_failed",
+        baselineStatus: "failed_as_expected",
+      },
+    });
     const receipt = await call(harness, "export_evidence_receipt");
-    expect(receipt).toMatchObject({ ok: true, data: { fixture: false } });
+    expect(receipt).toMatchObject({ ok: false, error: { code: "ILLEGAL_TRANSITION" } });
   });
+
+  it("rejects a receipt when the workspace changes during async validation", async () => {
+    let releaseBuild: (() => void) | undefined;
+    let markBuildStarted: (() => void) | undefined;
+    const buildStarted = new Promise<void>((resolve) => {
+      markBuildStarted = resolve;
+    });
+    const buildGate = new Promise<void>((resolve) => {
+      releaseBuild = resolve;
+    });
+    const harness = createWebMcpHarness({}, {
+      async buildReceipt(state, createdAt) {
+        markBuildStarted?.();
+        await buildGate;
+        return buildEvidenceReceipt(state, createdAt);
+      },
+    });
+    await call(harness, "run_baseline", { request_id: "stale-receipt-baseline" });
+    await call(harness, "stage_harness_patch", { request_id: "stale-receipt-stage" });
+    await call(harness, "run_candidate_suite", { request_id: "stale-receipt-suite" });
+
+    const exporting = harness.executor.execute("export_evidence_receipt", {});
+    await buildStarted;
+    const loaded = await call(harness, "load_mission", {
+      mission_id: "retry",
+      request_id: "stale-receipt-load",
+    });
+    expect(loaded).toMatchObject({ ok: true, data: { missionId: "retry", revision: 6 } });
+    releaseBuild?.();
+
+    await expect(exporting).resolves.toMatchObject({
+      ok: false,
+      error: { code: "STALE_REVISION" },
+      safeState: { missionId: "retry", revision: 6 },
+    });
+  });
+
+  it.each(["completion", "handoff", "retry", "authority"] as const)(
+    "keeps the full %s investigation inside the WebMCP output budget",
+    async (missionId) => {
+      const harness = createWebMcpHarness();
+      if (missionId !== "completion") {
+        await call(harness, "load_mission", {
+          mission_id: missionId,
+          request_id: `${missionId}-load`,
+        });
+      }
+      const baseline = await call(harness, "run_baseline", {
+        request_id: `${missionId}-baseline`,
+      });
+      expect(baseline).toMatchObject({
+        ok: true,
+        data: { missionId, baselineStatus: "failed_as_expected" },
+      });
+      await call(harness, "stage_harness_patch", {
+        request_id: `${missionId}-stage`,
+        hypothesis: `The declared ${missionId} control should repair the target without regressing sealed cases.`,
+      });
+      const suite = await call(harness, "run_candidate_suite", {
+        request_id: `${missionId}-suite`,
+      });
+      expect(suite).toMatchObject({
+        ok: true,
+        data: { missionId, candidateSuiteStatus: "passed" },
+      });
+      const comparison = await call(harness, "compare_harnesses");
+      expect(comparison).toMatchObject({
+        ok: true,
+        data: { scenarioId: missionId, sealed: { passed: 2, total: 2 } },
+      });
+      const receipt = await call(harness, "export_evidence_receipt");
+      expect(receipt).toMatchObject({
+        ok: true,
+        data: {
+          schema: "agent-harness-lab-receipt/1.0.0",
+          mission: { id: missionId },
+          receiptDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        },
+      });
+    },
+  );
 });

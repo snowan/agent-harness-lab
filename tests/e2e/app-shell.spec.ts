@@ -1,5 +1,10 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { canonicalSha256 } from "../../src/domain/evaluation";
+import { LAB_SNAPSHOT_KEY } from "../../src/persistence/snapshot";
+import { receiptDigestPayload } from "../../src/receipts/digest-payload";
+import type { EvidenceReceipt } from "../../src/receipts/types";
 
 const expectedWebMcpTools = [
   "get_lab_state",
@@ -98,17 +103,17 @@ async function expectAccessible(page: Page) {
   ).toEqual([]);
 }
 
-async function runBaseline(page: Page) {
+async function runBaseline(page: Page, expectedRevision = 2) {
   const button = page.getByRole("button", { name: "Run deterministic baseline" });
   await expect(button).toBeEnabled();
   await button.click();
   await expect(page.getByTestId("phase")).toHaveText("baseline failed");
-  await expect(page.getByTestId("revision")).toContainText("Revision 2");
+  await expect(page.getByTestId("revision")).toContainText(`Revision ${expectedRevision}`);
   await expect(page.getByRole("heading", { name: "Baseline trajectory" })).toBeVisible();
   await expect(page.locator('[aria-labelledby="baseline-trace-title"]').getByText("Invariant failed", { exact: true })).toBeVisible();
 }
 
-async function stageCandidate(page: Page, hypothesis?: string) {
+async function stageCandidate(page: Page, hypothesis?: string, expectedRevision = 3) {
   await page.getByRole("button", { name: "Review candidate patch" }).click();
   const patchTab = page.getByRole("tab", { name: "Harness patch" });
   await expect(patchTab).toHaveAttribute("aria-selected", "true");
@@ -119,16 +124,23 @@ async function stageCandidate(page: Page, hypothesis?: string) {
   await page.getByRole("button", { name: "Stage declared patch" }).click();
 
   await expect(page.getByTestId("phase")).toHaveText("patch staged");
-  await expect(page.getByTestId("revision")).toContainText("Revision 3");
+  await expect(page.getByTestId("revision")).toContainText(`Revision ${expectedRevision}`);
   await expect(patchTab).toBeFocused();
   await expect(page.getByText("staged", { exact: true }).first()).toBeVisible();
   await expect(field).toBeDisabled();
 }
 
-async function runCandidate(page: Page) {
+async function runCandidate(
+  page: Page,
+  expectedRevision = 5,
+  baselineSafety: { readonly score: string; readonly tone: "pass" | "fail" } = {
+    score: "2/2",
+    tone: "pass",
+  },
+) {
   await page.getByRole("button", { name: "Run target + 2 sealed" }).click();
   await expect(page.getByTestId("phase")).toHaveText("compared");
-  await expect(page.getByTestId("revision")).toContainText("Revision 5");
+  await expect(page.getByTestId("revision")).toContainText(`Revision ${expectedRevision}`);
 
   const evidenceTab = page.getByRole("tab", { name: "Evidence matrix" });
   await expect(evidenceTab).toHaveAttribute("aria-selected", "true");
@@ -136,8 +148,10 @@ async function runCandidate(page: Page) {
   await expect(page.getByRole("table")).toBeVisible();
   await expect(page.getByRole("table").locator("tbody tr")).toHaveCount(5);
   const safetyRow = page.getByRole("table").getByRole("row", { name: /^safety /i });
-  await expect(safetyRow.locator(".metric-badge").first()).toHaveText("2/2");
-  await expect(safetyRow.locator(".metric-badge").first()).toHaveClass(/pass/);
+  await expect(safetyRow.locator(".metric-badge").first()).toHaveText(baselineSafety.score);
+  await expect(safetyRow.locator(".metric-badge").first()).toHaveClass(
+    new RegExp(baselineSafety.tone),
+  );
   await expect(page.locator(".sealed-card")).toHaveCount(2);
   await expect(page.getByText("2 / 2 passed", { exact: true })).toBeVisible();
   await expect(page.getByText("Target trial", { exact: true })).toBeVisible();
@@ -402,7 +416,8 @@ test("resets a stale hypothesis draft when an agent reloads the same mission", a
   expect(health.pageErrors).toEqual([]);
 });
 
-test("loads catalog-only missions truthfully and blocks downstream actions", async ({ page }) => {
+test("runs the broken-context-handoff fixture through target and sealed evidence", async ({ page }) => {
+  const health = monitorBrowser(page);
   await page.goto("/");
   const handoff = page.getByRole("button", { name: /H2.*Broken context handoff/ });
   await handoff.focus();
@@ -411,26 +426,174 @@ test("loads catalog-only missions truthfully and blocks downstream actions", asy
   await expect(page.getByTestId("phase")).toHaveText("mission loaded");
   await expect(page.getByTestId("revision")).toContainText("Revision 1");
   await expect(handoff).toHaveAttribute("aria-pressed", "true");
-  const run = page.getByRole("button", { name: "Run deterministic baseline" });
-  await expect(run).toBeDisabled();
-  const disabledStyle = await run.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { background: style.backgroundColor, shadow: style.boxShadow };
-  });
-  expect(disabledStyle.shadow).toBe("none");
-  expect(disabledStyle.background).not.toBe("rgb(16, 26, 47)");
-  await expect(page.getByText("This cataloged mission does not have an executable fixture yet.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Promote", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Reject", exact: true })).toBeDisabled();
-  await expect(page.locator('.workflow li[data-status="unavailable"]')).toHaveCount(4);
-  await expect(page.getByText("not executable", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Decision gate unavailable" })).toBeVisible();
-  await expect(page.getByText("This catalog entry has no executable comparison or decision gate in the current release.", { exact: true })).toBeVisible();
-  await expect(page.getByText("This catalog entry has no executable candidate fixture in the current release.", { exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: "Evidence matrix" }).click();
-  await expect(page.getByText("This catalog entry has no executable baseline, candidate, or sealed evidence in the current release.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run deterministic baseline" })).toBeEnabled();
+  await expect(page.getByText("04 missions · 04 executable", { exact: true })).toBeVisible();
+  await expect(page.locator('.workflow li[data-status="active"]')).toHaveCount(1);
+
+  await runBaseline(page, 3);
+  await expect(page.locator('[aria-labelledby="baseline-trace-title"]')).toContainText("Blocker preserved");
+  await page.getByRole("button", { name: "Review candidate patch" }).click();
+  await expect(page.locator(".causal-card")).toContainText(
+    "Observe whether the intended harness control activates.",
+  );
+  await stageCandidate(
+    page,
+    "Validated checkpoints should preserve the blocker and resume from the next planned action.",
+    4,
+  );
+  await runCandidate(page, 6, { score: "0/1", tone: "fail" });
+  await expect(page.getByRole("table").locator("tbody tr")).toHaveCount(5);
+  await expect(page.locator('.sealed-card[data-status="passed"]')).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Promote", exact: true })).toBeEnabled();
   await page.getByRole("tab", { name: "Harness patch" }).click();
-  await expect(page.getByText("No candidate fixture is implemented for this mission yet.", { exact: true })).toBeVisible();
+  await expect(page.locator(".causal-card")).toContainText(
+    "The structured checkpoint loads before any mutation.",
+  );
+  await expectAccessible(page);
+  await expectNoPageOverflow(page);
+  expect(health.consoleErrors).toEqual([]);
+  expect(health.pageErrors).toEqual([]);
+});
+
+test("renders mission-specific causal evidence for retry and authority fixtures", async ({ page }) => {
+  const health = monitorBrowser(page);
+  await page.goto("/");
+  const cases = [
+    {
+      mission: /R3.*Lost tool response/,
+      hypothesis: "Reconcile the stable operation key before considering a retry.",
+      detail: "The reconciliation policy activates for the ambiguous write.",
+    },
+    {
+      mission: /A4.*Authority drift/,
+      hypothesis: "Bind authority to one mission and revoke it at the terminal boundary.",
+      detail: "The capability lease policy activates before diagnosis.",
+    },
+  ] as const;
+  let revision = 0;
+
+  for (const entry of cases) {
+    await page.getByRole("button", { name: entry.mission }).click();
+    revision += 1;
+    await runBaseline(page, revision + 2);
+    revision += 2;
+    await page.getByRole("button", { name: "Review candidate patch" }).click();
+    const causalCard = page.locator(".causal-card");
+    await expect(causalCard).toContainText(
+      "Observe whether the intended harness control activates.",
+    );
+    await expect(causalCard).not.toContainText("browser QA");
+    await stageCandidate(page, entry.hypothesis, revision + 1);
+    revision += 1;
+    await runCandidate(page, revision + 2, { score: "0/1", tone: "fail" });
+    revision += 2;
+    await page.getByRole("tab", { name: "Harness patch" }).click();
+    await expect(causalCard).toContainText(entry.detail);
+  }
+
+  await expectAccessible(page);
+  await expectNoPageOverflow(page);
+  expect(health.consoleErrors).toEqual([]);
+  expect(health.pageErrors).toEqual([]);
+});
+
+test("restores every stable evaluation step and downloads a verified receipt", async ({ page }) => {
+  const health = monitorBrowser(page);
+  await page.goto("/");
+
+  await runBaseline(page);
+  await expect(page.getByTestId("persistence-status")).toContainText("Saved local revision 2");
+  await page.reload();
+  await expect(page.getByTestId("phase")).toHaveText("baseline failed");
+  await expect(page.getByTestId("revision")).toContainText("Revision 2");
+  await expect(page.getByTestId("persistence-status")).toContainText("Restored local revision 2");
+
+  await stageCandidate(page, "Reloaded evidence should preserve the exact staged patch.");
+  await expect(page.getByTestId("persistence-status")).toContainText("Saved local revision 3");
+  await page.reload();
+  await expect(page.getByTestId("phase")).toHaveText("patch staged");
+  await expect(page.getByTestId("revision")).toContainText("Revision 3");
+  await expect(page.locator(".candidate-summary")).toContainText("Reloaded evidence should preserve the exact staged patch.");
+
+  await runCandidate(page);
+  const targetDigest = await page.locator(".target-card code").textContent();
+  await expect(page.getByTestId("persistence-status")).toContainText("Saved local revision 5");
+  await page.reload();
+  await expect(page.getByTestId("phase")).toHaveText("compared");
+  await expect(page.getByTestId("revision")).toContainText("Revision 5");
+  await expect(page.getByTestId("persistence-status")).toContainText("Restored local revision 5");
+  await page.getByRole("button", { name: "Review evidence" }).click();
+  await expect(page.locator(".target-card code")).toHaveText(targetDigest ?? "");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download JSON receipt" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(
+    /^agent-harness-lab-completion-\d{4}-\d{2}-\d{2}T.*Z\.json$/,
+  );
+  const downloadPath = await download.path();
+  if (!downloadPath) throw new Error("The receipt download did not produce a local file.");
+  const receipt = JSON.parse(await readFile(downloadPath, "utf8")) as EvidenceReceipt;
+  await expect(canonicalSha256(receiptDigestPayload(receipt))).resolves.toBe(
+    receipt.receiptDigest,
+  );
+  expect(receipt).toMatchObject({
+    schemaVersion: "1.0.0",
+    scenario: { id: "completion" },
+    decision: null,
+    receiptDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+  });
+  expect(JSON.stringify(receipt)).not.toContain("hiddenReasoning");
+  await expect(page.getByTestId("receipt-download")).toContainText(receipt.receiptDigest);
+
+  await page.getByRole("button", { name: "Promote", exact: true }).click();
+  await expect(page.getByTestId("persistence-status")).toContainText("Saved local revision 6");
+  await page.reload();
+  await expect(page.getByTestId("phase")).toHaveText("promoted");
+  await expect(page.getByTestId("revision")).toContainText("Revision 6");
+  await expect(page.getByRole("heading", { name: "Candidate promoted by human" })).toBeVisible();
+  await expect(page.getByTestId("persistence-status")).toContainText("Restored local revision 6");
+  await expectAccessible(page);
+  await expectNoPageOverflow(page);
+  expect(health.consoleErrors).toEqual([]);
+  expect(health.pageErrors).toEqual([]);
+});
+
+test("ignores and removes an invalid local snapshot", async ({ page }) => {
+  await page.addInitScript((key) => {
+    localStorage.setItem(key, "{invalid-json");
+  }, LAB_SNAPSHOT_KEY);
+  await page.goto("/");
+
+  await expect(page.getByTestId("phase")).toHaveText("mission loaded");
+  await expect(page.getByTestId("revision")).toContainText("Revision 0");
+  await expect(page.getByTestId("persistence-status")).toContainText(
+    "Saved workspace failed validation and was ignored.",
+  );
+  expect(await page.evaluate((key) => localStorage.getItem(key), LAB_SNAPSHOT_KEY)).toBeNull();
+  await expect(page.getByRole("button", { name: "Run deterministic baseline" })).toBeEnabled();
+  await expectNoPageOverflow(page);
+});
+
+test("announces a local save failure while preserving the in-memory command", async ({ page }) => {
+  await page.addInitScript((snapshotKey) => {
+    const originalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function setItem(key, value) {
+      if (key === snapshotKey) {
+        throw new DOMException("Local snapshot writes are blocked for this test.", "QuotaExceededError");
+      }
+      originalSetItem.call(this, key, value);
+    };
+  }, LAB_SNAPSHOT_KEY);
+  await page.goto("/");
+
+  await runBaseline(page);
+  await expect(page.getByTestId("persistence-status")).toHaveAttribute("data-state", "error");
+  await expect(page.getByRole("alert")).toContainText(
+    "The stable workspace is in memory, but local recovery could not be updated.",
+  );
+  await expect(page.getByTestId("phase")).toHaveText("baseline failed");
+  await expect(page.getByTestId("revision")).toContainText("Revision 2");
   await expectNoPageOverflow(page);
 });
 

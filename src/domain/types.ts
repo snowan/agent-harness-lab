@@ -34,11 +34,13 @@ export type HumanDecision =
       readonly outcome: "promoted";
       readonly actor: "human";
       readonly comparedRevision: number;
+      readonly recordedAt: string;
     }
   | {
       readonly outcome: "rejected";
       readonly actor: "human";
       readonly comparedRevision: number;
+      readonly recordedAt: string;
     };
 
 interface EventMeta {

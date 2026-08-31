@@ -1,5 +1,9 @@
 import { LabDomainError } from "./errors";
 import { assertTraceableRun, assertTraceableSuite } from "./evaluation";
+import {
+  isAllowedActorSourcePair,
+  isAllowedHumanDecisionSource,
+} from "./provenance";
 import type { CandidatePatch, DomainEvent, HumanDecision, LabPhase, LabState } from "./types";
 import { getScenarioDefinition } from "../scenarios/registry";
 
@@ -178,8 +182,13 @@ function assertFixturePatchEvent(state: LabState, patch: CandidatePatch): void {
     && patch.diff.length === fixture.diff.length
     && patch.diff.every((line, index) => line === fixture.diff[index]),
   );
-  const hypothesis = patch.hypothesis.trim();
-  if (!identityMatches || !hypothesis || hypothesis.length > 280) {
+  const canonicalHypothesis = patch.hypothesis.trim();
+  if (
+    !identityMatches
+    || !canonicalHypothesis
+    || patch.hypothesis !== canonicalHypothesis
+    || patch.hypothesis.length > 280
+  ) {
     invalidResult(
       `PATCH_STAGED must use the declared fixture identity for mission ${state.missionId}, with only a non-empty hypothesis of at most 280 characters editable.`,
     );
@@ -195,11 +204,17 @@ function assertHumanDecisionEvent(
   const expectedOutcome: HumanDecision["outcome"] = event.type === "CANDIDATE_PROMOTED"
     ? "promoted"
     : "rejected";
+  const recordedAt = event.decision.recordedAt;
+  const timestampIsCanonical = typeof recordedAt === "string"
+    && !Number.isNaN(Date.parse(recordedAt))
+    && new Date(recordedAt).toISOString() === recordedAt;
   if (
     event.actor !== "human"
+    || !isAllowedHumanDecisionSource(event.source)
     || event.decision.actor !== "human"
     || event.decision.comparedRevision !== state.revision
     || event.decision.outcome !== expectedOutcome
+    || !timestampIsCanonical
   ) {
     invalidResult(
       `${event.type} must be a human decision for current compared revision ${state.revision}.`,
@@ -210,6 +225,14 @@ function assertHumanDecisionEvent(
     && state.candidateSuiteResult?.status !== "passed"
   ) {
     invalidResult("CANDIDATE_PROMOTED requires a passing candidate suite; a failed comparison can only be rejected.");
+  }
+}
+
+function assertEventProvenance(event: DomainEvent): void {
+  if (!isAllowedActorSourcePair(event.actor, event.source)) {
+    invalidResult(
+      `${event.type} contains an invalid ${event.actor}/${event.source} provenance pair.`,
+    );
   }
 }
 
@@ -240,6 +263,7 @@ function advance(
 }
 
 export function reduceLabState(state: LabState, event: DomainEvent): LabState {
+  assertEventProvenance(event);
   switch (event.type) {
     case "MISSION_LOADED":
       return advance(state, event, {

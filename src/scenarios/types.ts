@@ -50,12 +50,18 @@ export interface CompletionHarnessPolicy {
   readonly externalWriteTargets: readonly string[];
 }
 
+export interface DeclaredHarnessPolicy {
+  readonly rules: readonly string[];
+}
+
+export type HarnessPolicy = CompletionHarnessPolicy | DeclaredHarnessPolicy;
+
 export interface HarnessDefinition {
   readonly id: string;
   readonly role: HarnessRole;
   readonly version: string;
   readonly title: string;
-  readonly policy: CompletionHarnessPolicy;
+  readonly policy: HarnessPolicy;
 }
 
 export interface HarnessPatchIdentity {
@@ -78,7 +84,11 @@ export interface TrialSpec {
   readonly kind: TrialKind;
   readonly title: string;
   readonly purpose: string;
-  readonly initialState: CompletionTrialInput;
+  readonly initialState: CompletionTrialInput | Readonly<Record<string, unknown>>;
+  readonly declaredFacts?: {
+    readonly baseline: readonly FactTemplate[];
+    readonly candidate: readonly FactTemplate[];
+  };
   readonly expectedOutcome: {
     readonly baseline: "pass" | "fail";
     readonly candidate: "pass";
@@ -118,7 +128,7 @@ export interface ScenarioDefinition {
   readonly invariant: string;
   readonly invariantAssertionId: string;
   readonly fixtureDisclosure: string;
-  readonly engine: "completion-v1";
+  readonly engine: "completion-v1" | "declared-facts-v1";
   readonly baseline: HarnessDefinition & { readonly role: "baseline" };
   readonly candidate: CandidateDefinition;
   readonly trials: readonly TrialSpec[];

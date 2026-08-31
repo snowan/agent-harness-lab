@@ -76,18 +76,18 @@ describe("scenario command effects", () => {
     });
   });
 
-  it("leaves the stable revision unchanged for an unavailable or mismatched fixture", async () => {
+  it("runs another registered fixture and rejects a mismatched patch without changing stable state", async () => {
     const { store, service, context } = createHarness();
     await service.dispatch(
       { type: "LOAD_MISSION", missionId: "handoff" },
       context(),
     );
-    const unavailable = store.getState();
-
-    await expect(
-      service.dispatch({ type: "RUN_BASELINE" }, context()),
-    ).rejects.toMatchObject({ code: "COMMAND_FAILED" });
-    expect(store.getState()).toBe(unavailable);
+    const handoff = await service.dispatch({ type: "RUN_BASELINE" }, context());
+    expect(handoff.state).toMatchObject({
+      missionId: "handoff",
+      phase: "baseline_failed",
+      baselineResult: { status: "failed_as_expected" },
+    });
 
     await service.dispatch(
       { type: "LOAD_MISSION", missionId: "completion" },
