@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright video dependency
+        run: npx playwright install ffmpeg
+
       - name: Run complete verification suite
         run: npm run test:all
 
