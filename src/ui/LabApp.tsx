@@ -37,12 +37,19 @@ import type {
   SignalSummary,
   TrialRun,
 } from "../scenarios/types";
-import { isScenarioImplemented } from "../scenarios/registry";
+import {
+  getScenarioDefinition,
+  isScenarioImplemented,
+} from "../scenarios/registry";
+import { WEBMCP_TOOL_CONTRACTS } from "../webmcp/contracts";
+import {
+  webMcpRuntime,
+  type WebMcpRuntimeSnapshot,
+} from "../webmcp/status";
 import {
   getMissionCatalogEntry,
   HARNESS_LAYERS,
   MISSION_CATALOG,
-  TOOL_CONTRACT_PREVIEW,
 } from "./catalog";
 
 type RunView = "trajectory" | "evidence" | "patch";
@@ -113,6 +120,17 @@ function statusLabel(status: RunTraceView["status"]): string {
     case "unexpected_pass": return "Unexpected pass";
     case "failed": return "Failed";
     case "passed": return "Passed";
+  }
+}
+
+function webMcpRuntimeLabel(runtime: WebMcpRuntimeSnapshot): string {
+  switch (runtime.registration) {
+    case "detecting": return "WebMCP · detecting";
+    case "registering": return `WebMCP · ${runtime.registeredCount}/${runtime.totalCount}`;
+    case "ready": return `WebMCP · ${runtime.registeredCount} tools`;
+    case "unavailable": return "Manual mode · WebMCP unavailable";
+    case "error": return "Manual mode · registration failed";
+    case "stopped": return "Manual mode · tools stopped";
   }
 }
 
@@ -694,7 +712,7 @@ function ReviewRail({
               {pending === "reject" ? "Rejecting…" : "Reject"}
             </button>
           </div>
-          <small id={decisionHelpId}>Human-only controls. They are not part of the planned WebMCP tool set.</small>
+          <small id={decisionHelpId}>Human-only controls. They are not part of the registered WebMCP tool set.</small>
         </div>
       </div>
 
@@ -724,8 +742,10 @@ function ReviewRail({
 
 function ContractDialog({
   dialogRef,
+  runtime,
 }: {
   readonly dialogRef: RefObject<HTMLDialogElement | null>;
+  readonly runtime: WebMcpRuntimeSnapshot;
 }) {
   function keepFocusInside(event: ReactKeyboardEvent<HTMLDialogElement>): void {
     if (event.key !== "Tab") return;
@@ -753,16 +773,27 @@ function ContractDialog({
       onKeyDown={keepFocusInside}
     >
       <div className="dialog-head">
-        <div><span className="micro">PR 4 contract preview</span><h2 id="contract-title">Agent-facing tool contracts</h2></div>
+        <div><span className="micro">Live WebMCP contract</span><h2 id="contract-title">Agent-facing tool contracts</h2></div>
         <button className="button icon" type="button" aria-label="Close tool contracts" autoFocus onClick={() => dialogRef.current?.close()}>×</button>
       </div>
       <div className="dialog-body">
-        <p id="contract-copy">These eight page-local contracts are planned but not registered in this PR. They will reuse the same application service. Promotion, rejection, deployment, arbitrary execution, and cross-origin access remain outside the tool surface.</p>
+        <p id="contract-copy">
+          {runtime.registration === "ready"
+            ? "Eight page-local tools are registered against the same command service and selectors used by this visible workspace."
+            : runtime.registration === "error"
+              ? `${runtime.message} When registration succeeds, these same eight contracts use the manual workflow's command service and selectors.`
+              : `${runtime.message} In a browser that exposes WebMCP, these same eight contracts register without changing the manual workflow.`}
+          {" "}Promotion, rejection, deployment, arbitrary execution, and cross-origin access remain outside the tool surface.
+        </p>
         <div className="contract-list">
-          {TOOL_CONTRACT_PREVIEW.map((tool) => (
+          {WEBMCP_TOOL_CONTRACTS.map((tool) => (
             <article className="contract" key={tool.name}>
               <div><code>{tool.name}</code><span data-mode={tool.mode}>{tool.mode}</span></div>
-              <p>{tool.summary}</p>
+              <p>{tool.description}</p>
+              <small>
+                {tool.annotations.readOnlyHint ? "readOnlyHint: true" : "state-changing command"}
+                {tool.annotations.untrustedContentHint ? " · untrustedContentHint: true" : ""}
+              </small>
             </article>
           ))}
         </div>
@@ -788,6 +819,11 @@ export default function LabApp() {
   const decision = selectDecisionAvailability(state);
   const workflow = selectWorkflowSteps(state);
   const baselineAvailability = selectBaselineRunAvailability(state, "human");
+  const webMcp = useSyncExternalStore(
+    webMcpRuntime.subscribe,
+    webMcpRuntime.getSnapshot,
+    webMcpRuntime.getSnapshot,
+  );
   const [activeView, setActiveView] = useState<RunView>("trajectory");
   const [hypothesis, setHypothesis] = useState(
     scenario?.candidate.patch.hypothesis ?? "",
@@ -799,6 +835,7 @@ export default function LabApp() {
   const pendingRef = useRef<PendingAction | null>(null);
   const mountedRef = useRef(true);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const missionRef = useRef(state.missionId);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -807,6 +844,36 @@ export default function LabApp() {
       abortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (missionRef.current === state.missionId) return;
+    missionRef.current = state.missionId;
+    setHypothesis(scenario?.candidate.patch.hypothesis ?? "");
+    setActiveView("trajectory");
+  }, [scenario, state.missionId]);
+
+  useEffect(() => {
+    const call = webMcp.lastCall;
+    if (!call) return;
+    if (call.state === "failed") {
+      setError(call.message);
+      return;
+    }
+    setError(null);
+    setMessage(call.message);
+    if (call.state !== "succeeded") return;
+    if (call.tool === "load_mission") {
+      const loadedScenario = getScenarioDefinition(labStore.getState().missionId);
+      setHypothesis(loadedScenario?.candidate.patch.hypothesis ?? "");
+      setActiveView("trajectory");
+    } else if (call.tool === "run_baseline") {
+      setActiveView("trajectory");
+    } else if (call.tool === "stage_harness_patch") {
+      setActiveView("patch");
+    } else if (call.tool === "run_candidate_suite" || call.tool === "compare_harnesses") {
+      setActiveView("evidence");
+    }
+  }, [webMcp.lastCall]);
 
   function focusTab(view: RunView): void {
     requestAnimationFrame(() => {
@@ -947,11 +1014,15 @@ export default function LabApp() {
         <button
           className="runtime-pill"
           type="button"
+          data-state={webMcp.registration}
+          data-testid="webmcp-runtime"
           aria-haspopup="dialog"
           aria-controls="contract-dialog"
+          aria-label={`${webMcpRuntimeLabel(webMcp)} · inspect contracts`}
+          title={webMcp.message}
           onClick={() => dialogRef.current?.showModal()}
         >
-          <span aria-hidden="true" /> Manual mode · inspect contracts
+          <span aria-hidden="true" /> {webMcpRuntimeLabel(webMcp)}
         </button>
       </header>
 
@@ -1061,17 +1132,30 @@ export default function LabApp() {
         </section>
 
         <section className="contract-surface" aria-labelledby="contract-surface-title">
-          <div><p className="eyebrow">Next collaboration layer</p><h2 id="contract-surface-title">One command service, two collaborators.</h2><p>The human flow is live now. PR 4 will register eight narrow WebMCP tools against the same state transitions without exposing promotion or rejection.</p></div>
-          <button className="button" type="button" aria-haspopup="dialog" aria-controls="contract-dialog" onClick={() => dialogRef.current?.showModal()}>Inspect planned contracts</button>
+          <div>
+            <p className="eyebrow">WebMCP collaboration layer</p>
+            <h2 id="contract-surface-title">Eight narrow tools, one shared state.</h2>
+            <p>{webMcp.message} Agent commands commit through the same service as visible controls and appear in activity provenance.</p>
+            {webMcp.lastCall ? (
+              <p
+                className="webmcp-call-status"
+                data-state={webMcp.lastCall.state}
+                data-testid="webmcp-last-call"
+              >
+                <strong>{webMcp.lastCall.tool}</strong> · {webMcp.lastCall.message}
+              </p>
+            ) : null}
+          </div>
+          <button className="button" type="button" aria-haspopup="dialog" aria-controls="contract-dialog" onClick={() => dialogRef.current?.showModal()}>Inspect live contracts</button>
         </section>
 
         <div className="announcement-stack" aria-label="Command status">
-          <p className="status-message" role="status" aria-live="polite" data-testid="status-message">{message}</p>
+          {!error ? <p className="status-message" role="status" aria-live="polite" data-testid="status-message">{message}</p> : null}
           {error ? <p className="error-message" role="alert">{error}</p> : null}
         </div>
       </main>
 
-      <ContractDialog dialogRef={dialogRef} />
+      <ContractDialog dialogRef={dialogRef} runtime={webMcp} />
     </div>
   );
 }

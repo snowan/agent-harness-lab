@@ -213,6 +213,8 @@ Required tool set:
 | `compare_harnesses` | Read | Compare the five evidence signals and unresolved risks. |
 | `export_evidence_receipt` | Read | Return a portable structured receipt without deciding or deploying. |
 
+**PR 4 implementation note (August 30, 2026):** The eight tools now use the current [`document.modelContext` draft API](https://webmachinelearning.github.io/webmcp/) with same-page registration, `AbortController` lifecycle cleanup, strict application-side input validation, bounded results, visible adapter status, and explicit read/untrusted annotations. `export_evidence_receipt` returns a versioned bounded receipt view in this slice; PR 5 adds its formal JSON Schema, download flow, canonical receipt digest, and local snapshot recovery.
+
 ## 9. Built-in scenario requirements
 
 | Scenario | Baseline failure | Harness layer | Target assertion | Sealed-case purpose |

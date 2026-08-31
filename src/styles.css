@@ -161,6 +161,29 @@ pre {
   box-shadow: 0 0 0 4px rgba(238, 107, 56, 0.16);
 }
 
+.runtime-pill[data-state="ready"] {
+  border-color: var(--mint);
+}
+
+.runtime-pill[data-state="ready"] > span {
+  background: var(--mint);
+  box-shadow: 0 0 0 4px rgba(111, 214, 178, 0.18);
+}
+
+.runtime-pill[data-state="error"] {
+  border-color: #ef8d8d;
+}
+
+.runtime-pill[data-state="error"] > span {
+  background: #ef8d8d;
+  box-shadow: 0 0 0 4px rgba(239, 141, 141, 0.18);
+}
+
+.runtime-pill[data-state="stopped"] > span {
+  background: #8994a8;
+  box-shadow: 0 0 0 4px rgba(137, 148, 168, 0.18);
+}
+
 .runtime-pill:hover {
   border-color: var(--orange);
   background: rgba(255, 255, 255, 0.05);
@@ -1519,6 +1542,29 @@ pre {
   line-height: 1.55;
 }
 
+.contract-surface .webmcp-call-status {
+  width: fit-content;
+  max-width: 100%;
+  padding: 7px 9px;
+  color: #d8f5eb;
+  background: rgba(111, 214, 178, 0.1);
+  border: 1px solid rgba(111, 214, 178, 0.42);
+  border-radius: 7px;
+  overflow-wrap: anywhere;
+}
+
+.contract-surface .webmcp-call-status[data-state="running"] {
+  color: #ffe2d6;
+  background: rgba(238, 107, 56, 0.12);
+  border-color: rgba(238, 107, 56, 0.48);
+}
+
+.contract-surface .webmcp-call-status[data-state="failed"] {
+  color: #ffd6d6;
+  background: rgba(162, 53, 53, 0.16);
+  border-color: rgba(239, 141, 141, 0.55);
+}
+
 .contract-surface .button {
   color: #fff;
   border-color: #75829a;
@@ -1649,6 +1695,16 @@ dialog::backdrop {
   color: var(--muted);
   font-size: 0.65rem;
   line-height: 1.42;
+}
+
+.contract small {
+  display: block;
+  margin-top: 7px;
+  color: #4f5a6d;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.56rem;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
 }
 
 .human-boundary {

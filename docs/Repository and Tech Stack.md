@@ -113,8 +113,8 @@ Receipts include schema version, scenario and harness versions, candidate diff, 
 ## WebMCP implementation rules
 
 - Register compact tools: `get_lab_state`, `load_mission`, `run_baseline`, `inspect_trace`, `stage_harness_patch`, `run_candidate_suite`, `compare_harnesses`, and `export_evidence_receipt`.
-- Keep tool descriptions under Chrome’s recommended character budgets and return bounded summaries rather than the entire trace.
-- Mark true reads with `readOnlyHint`; mark externally sourced/imported trace text with `untrustedContentHint` when that feature ships.
+- Keep tool descriptions under Chrome’s recommended character budgets, return bounded summaries rather than the entire trace, and enforce the 1.5K serialized result ceiling at the executor boundary.
+- Mark true reads with `readOnlyHint`; mark state and receipt reads with `untrustedContentHint` because they can contain a user-authored hypothesis.
 - Reuse the validated command layer. Reject invalid scenario IDs, patch layers, and out-of-order actions.
 - Use an `AbortController` to unregister tools on hot reload or page teardown.
 - Do not expose tools across origins for the MVP.
