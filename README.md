@@ -8,10 +8,11 @@ The challenge experience is designed for a person and an agent to use the same v
 
 ## Start here
 
+- Install Node.js 22.13 or newer.
 - Run the application locally:
 
   ```bash
-  npm install
+  npm ci
   npm run dev
   ```
 
@@ -20,6 +21,7 @@ The challenge experience is designed for a person and an agent to use the same v
 - Read the [product requirements](docs/Agent%20Harness%20Lab%20PRD.md).
 - Review the [architecture](docs/Architecture.md) and [implementation plan](docs/Implementation%20Plan.md).
 - See the concise [product proposal](docs/Agent%20Harness%20Lab%20Proposal.md), [research brief](docs/Research%20Brief.md), and [repository and stack decision](docs/Repository%20and%20Tech%20Stack.md).
+- Review the [third-party notices](THIRD_PARTY_NOTICES.md) before redistributing the repository.
 
 ## Core demo
 
