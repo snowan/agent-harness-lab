@@ -1,6 +1,6 @@
 # Agent Harness Lab — Devpost draft
 
-> Status: prepared copy. Replace every bracketed field with a verified public URL or release fact before submission. Do not publish this draft as-is.
+> Status: prepared copy. The public app and source are verified; the YouTube URL and final Devpost submission still require owner approval. Do not publish this draft as-is.
 
 ## Listing
 
@@ -8,9 +8,9 @@
 
 **Tagline:** Prove the harness change before you trust it.
 
-**Live app:** `[PUBLIC_LIVE_URL]`
+**Live app:** https://agent-harness-lab.xiaoweiwan-michi.chatgpt.site
 
-**Source:** `[PUBLIC_REPOSITORY_URL]`
+**Source:** https://github.com/snowan/agent-harness-lab
 
 **Demo:** `[PUBLIC_YOUTUBE_URL]`
 
@@ -51,7 +51,7 @@ Every built-in result comes from declared fixture facts—not a live model or fa
 
 ## How to try it
 
-1. Open `[PUBLIC_LIVE_URL]` in ChatGPT's in-app browser.
+1. Open https://agent-harness-lab.xiaoweiwan-michi.chatgpt.site in ChatGPT's in-app browser.
 2. Ask the agent: “Use the available Agent Harness Lab tools to evaluate the Completion without proof mission. Inspect the failed trace, stage the declared patch with a concise causal hypothesis, run the candidate suite, and compare the evidence. Do not make the final promotion decision.”
 3. Watch the visible phase, evidence, and provenance update as each WebMCP tool runs.
 4. Review the five-signal matrix and two sealed cases.
@@ -68,11 +68,9 @@ The full workflow also remains usable manually in browsers without WebMCP.
 
 ## Verification snapshot
 
-Release validation must be replaced with the final public commit results:
-
-- `[UNIT_TEST_RESULT]`
-- `[WEBMCP_CONTRACT_RESULT]`
-- `[BROWSER_RESULT]`
-- `[ACCESSIBILITY_RESULT]`
-- `[SIGNED_OUT_LIVE_SMOKE_RESULT]`
-- `[CHATGPT_WEBMCP_SMOKE_RESULT]`
+- 142 unit tests passed across 11 files.
+- 24 WebMCP contract tests passed across four files.
+- 34 Playwright cases passed across desktop, 390 px, and 320 px projects; the two mobile instances of the desktop-only 200 percent zoom proxy were intentionally skipped.
+- Automated serious/critical accessibility scans, keyboard focus, dialog focus, reduced motion, announcements, narrow-width tables, and page-level overflow checks passed.
+- A clean browser context completed the deployed comparison, human promotion, receipt download, reload recovery, and stable receipt-digest check with no console, page, request, HTTP, or overflow error.
+- ChatGPT's in-app browser discovered exactly the eight intended WebMCP tools on the public release. The discovered set contains no promotion, rejection, deployment, filesystem, URL-fetch, or code-execution capability.

@@ -6,6 +6,8 @@ Agent Harness Lab is a browser-native WebMCP workbench for evaluating changes to
 
 The challenge experience is designed for a person and an agent to use the same visible workspace: reproduce a failure, inspect its trajectory, stage one harness patch, run target and sealed fixtures, compare causal evidence, and make a promote-or-reject decision. The page registers eight structured WebMCP tools when the browser supports the draft API; promotion and rejection remain human-only.
 
+[Open the public release](https://agent-harness-lab.xiaoweiwan-michi.chatgpt.site) · [View the public source](https://github.com/snowan/agent-harness-lab) · [MIT License](LICENSE)
+
 ## Start here
 
 - Install Node.js 22.13 or newer.
@@ -21,6 +23,7 @@ The challenge experience is designed for a person and an agent to use the same v
 - Read the [product requirements](docs/Agent%20Harness%20Lab%20PRD.md).
 - Review the [architecture](docs/Architecture.md) and [implementation plan](docs/Implementation%20Plan.md).
 - See the concise [product proposal](docs/Agent%20Harness%20Lab%20Proposal.md), [research brief](docs/Research%20Brief.md), and [repository and stack decision](docs/Repository%20and%20Tech%20Stack.md).
+- Read the [MIT License](LICENSE).
 - Review the [third-party notices](THIRD_PARTY_NOTICES.md) before redistributing the repository.
 
 ## Core demo
@@ -66,7 +69,7 @@ The adapter follows the current [`document.modelContext` WebMCP draft](https://w
 
 ## Submission boundary
 
-The WebMCP Challenge requires a public repository with an open-source license at submission time. Repository visibility and license selection are explicit release decisions; they are not performed by the application or its WebMCP tools.
+The challenge release is published from the [public repository](https://github.com/snowan/agent-harness-lab) under the [MIT License](LICENSE). Repository visibility, licensing, deployment, and final submission remain explicit human release actions; none is available through the application's WebMCP tools.
 
 ## Challenge
 
