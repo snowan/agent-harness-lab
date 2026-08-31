@@ -4,10 +4,10 @@ import path from "node:path";
 import { chromium } from "@playwright/test";
 
 const proofId = process.argv[2];
-const supportedProofs = new Set(["pr-01", "pr-02", "pr-03", "pr-04", "pr-05"]);
+const supportedProofs = new Set(["pr-01", "pr-02", "pr-03", "pr-04", "pr-05", "pr-06"]);
 
 if (!supportedProofs.has(proofId)) {
-  throw new Error("Use an available proof script from `npm run proof:pr1` through `npm run proof:pr5`.");
+  throw new Error("Use an available proof script from `npm run proof:pr1` through `npm run proof:pr6`.");
 }
 
 const expectedWebMcpTools = [
@@ -28,37 +28,50 @@ const proofPort = Number(process.env.AHL_PROOF_PORT ?? "4378");
 if (!Number.isInteger(proofPort) || proofPort < 1 || proofPort > 65_535) {
   throw new Error("AHL_PROOF_PORT must be an integer between 1 and 65535.");
 }
-const appUrl = `http://127.0.0.1:${proofPort}`;
+const externalProofUrl = process.env.AHL_PROOF_BASE_URL?.trim();
+let appUrl = `http://127.0.0.1:${proofPort}`;
+if (externalProofUrl) {
+  const parsed = new URL(externalProofUrl);
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("AHL_PROOF_BASE_URL must use http or https.");
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error("AHL_PROOF_BASE_URL must not contain credentials, a query, or a fragment.");
+  }
+  appUrl = parsed.href.replace(/\/$/, "");
+}
 
 await mkdir(outputDir, { recursive: true });
 await rm(videoDir, { recursive: true, force: true });
 await mkdir(videoDir, { recursive: true });
 
-const server = spawn(
-  process.execPath,
-  [
-    path.join(root, "node_modules", "vite", "bin", "vite.js"),
-    "preview",
-    "--host",
-    "127.0.0.1",
-    "--port",
-    String(proofPort),
-    "--strictPort",
-  ],
-  { cwd: root, stdio: ["ignore", "pipe", "pipe"] },
-);
-
+let server;
 let serverFailure;
-server.once("error", (error) => {
-  serverFailure = error;
-});
-server.once("exit", (code, signal) => {
-  if (code !== 0 && code !== null) {
-    serverFailure = new Error(`Proof server exited with code ${code}.`);
-  } else if (signal && signal !== "SIGTERM") {
-    serverFailure = new Error(`Proof server exited after signal ${signal}.`);
-  }
-});
+if (!externalProofUrl) {
+  server = spawn(
+    process.execPath,
+    [
+      path.join(root, "node_modules", "vite", "bin", "vite.js"),
+      "preview",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(proofPort),
+      "--strictPort",
+    ],
+    { cwd: root, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  server.once("error", (error) => {
+    serverFailure = error;
+  });
+  server.once("exit", (code, signal) => {
+    if (code !== 0 && code !== null) {
+      serverFailure = new Error(`Proof server exited with code ${code}.`);
+    } else if (signal && signal !== "SIGTERM") {
+      serverFailure = new Error(`Proof server exited after signal ${signal}.`);
+    }
+  });
+}
 
 async function waitForApp() {
   const deadline = Date.now() + 30_000;
@@ -85,11 +98,21 @@ let browser;
 function monitorPage(page) {
   const consoleErrors = [];
   const pageErrors = [];
+  const requestFailures = [];
+  const httpErrors = [];
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text());
   });
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  return { consoleErrors, pageErrors };
+  page.on("requestfailed", (request) => {
+    requestFailures.push(`${request.method()} ${request.url()} · ${request.failure()?.errorText ?? "failed"}`);
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      httpErrors.push(`${response.status()} ${response.request().method()} ${response.url()}`);
+    }
+  });
+  return { consoleErrors, pageErrors, requestFailures, httpErrors };
 }
 
 async function assertHealthy(page, health) {
@@ -101,11 +124,18 @@ async function assertHealthy(page, health) {
   if (metrics.document > metrics.viewport || metrics.body > metrics.viewport) {
     throw new Error(`Proof page overflowed: ${JSON.stringify(metrics)}.`);
   }
-  if (health.consoleErrors.length || health.pageErrors.length) {
+  if (
+    health.consoleErrors.length
+    || health.pageErrors.length
+    || health.requestFailures.length
+    || health.httpErrors.length
+  ) {
     throw new Error(
       `Proof page reported browser errors: ${[
         ...health.consoleErrors,
         ...health.pageErrors,
+        ...health.requestFailures,
+        ...health.httpErrors,
       ].join(" | ")}`,
     );
   }
@@ -270,14 +300,14 @@ async function preparePr3Page(page, promote) {
   }
 }
 
-async function runPr4AgentComparison(page, paced = false) {
+async function runPr4AgentComparison(page, paced = false, proofLabel = "PR4") {
   const pause = async (duration = 500) => {
     if (paced) await page.waitForTimeout(duration);
   };
   const expectResult = (result, phase, revision, tool) => {
     if (!result?.ok || result.data?.phase !== phase || result.data?.revision !== revision) {
       throw new Error(
-        `PR4 ${tool} returned an unexpected result: ${JSON.stringify(result)}.`,
+        `${proofLabel} ${tool} returned an unexpected result: ${JSON.stringify(result)}.`,
       );
     }
   };
@@ -293,7 +323,7 @@ async function runPr4AgentComparison(page, paced = false) {
     || discovered.some((name) => /promote|reject|deploy|execute_code|filesystem/.test(name))
   ) {
     throw new Error(
-      `PR4 proof expected the eight bounded WebMCP tools and no decision or broad-execution tools; received ${runtime}/${JSON.stringify(discovered)}.`,
+      `${proofLabel} proof expected the eight bounded WebMCP tools and no decision or broad-execution tools; received ${runtime}/${JSON.stringify(discovered)}.`,
     );
   }
 
@@ -316,7 +346,7 @@ async function runPr4AgentComparison(page, paced = false) {
     limit: 2,
   });
   if (!trace?.ok || trace.data?.run !== "baseline" || trace.data?.facts?.length !== 2) {
-    throw new Error(`PR4 inspect_trace returned an unexpected result: ${JSON.stringify(trace)}.`);
+    throw new Error(`${proofLabel} inspect_trace returned an unexpected result: ${JSON.stringify(trace)}.`);
   }
 
   const hypothesis = "The fixed completion gate should activate browser QA and require both receipts.";
@@ -349,7 +379,7 @@ async function runPr4AgentComparison(page, paced = false) {
     || comparison.data?.promotionIsHumanOnly !== true
   ) {
     throw new Error(
-      `PR4 compare_harnesses returned an unexpected result: ${JSON.stringify(comparison)}.`,
+      `${proofLabel} compare_harnesses returned an unexpected result: ${JSON.stringify(comparison)}.`,
     );
   }
   await pause(900);
@@ -372,12 +402,12 @@ async function runPr4AgentComparison(page, paced = false) {
     || !activity?.includes("webmcp")
   ) {
     throw new Error(
-      `PR4 proof expected compared revision 5, five signals, two sealed trials, five agent-attributed events, and an enabled human decision; received ${phase}/${revision}/${rows}/${sealed}/${promoteEnabled}/${JSON.stringify(actors)}.`,
+      `${proofLabel} proof expected compared revision 5, five signals, two sealed trials, five agent-attributed events, and an enabled human decision; received ${phase}/${revision}/${rows}/${sealed}/${promoteEnabled}/${JSON.stringify(actors)}.`,
     );
   }
 }
 
-async function recordPr4HumanDecision(page, paced = false) {
+async function recordPr4HumanDecision(page, paced = false, proofLabel = "PR4") {
   const pause = async (duration = 500) => {
     if (paced) await page.waitForTimeout(duration);
   };
@@ -389,7 +419,7 @@ async function recordPr4HumanDecision(page, paced = false) {
     await dialog.locator(".contract").count() !== 8
     || !(await dialog.textContent())?.includes("there is no promotion or rejection tool")
   ) {
-    throw new Error("PR4 proof expected eight live contracts and an explicit human-decision boundary.");
+    throw new Error(`${proofLabel} proof expected eight live contracts and an explicit human-decision boundary.`);
   }
   await pause(900);
   await dialog.getByRole("button", { name: "Close tool contracts" }).click();
@@ -416,7 +446,7 @@ async function recordPr4HumanDecision(page, paced = false) {
     || receipt.data?.decision?.comparedRevision !== 5
   ) {
     throw new Error(
-      `PR4 proof recorded an unexpected human decision or receipt: ${phase}/${revision}/${firstActor}/${JSON.stringify(receipt)}.`,
+      `${proofLabel} proof recorded an unexpected human decision or receipt: ${phase}/${revision}/${firstActor}/${JSON.stringify(receipt)}.`,
     );
   }
 }
@@ -553,9 +583,66 @@ async function preparePr5Page(page, variant) {
   await downloadRestoreAndConfirm(page);
 }
 
+async function downloadPr6DecisionReceipt(page, paced = false) {
+  const pause = async (duration = 500) => {
+    if (paced) await page.waitForTimeout(duration);
+  };
+  const firstDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download JSON receipt" }).click();
+  const downloaded = await firstDownload;
+  const firstPath = await downloaded.path();
+  if (!firstPath) throw new Error("PR6 receipt download did not produce a readable file.");
+  const firstPayload = JSON.parse(await readFile(firstPath, "utf8"));
+  if (
+    firstPayload.schemaVersion !== "1.0.0"
+    || firstPayload.decision?.outcome !== "promoted"
+    || firstPayload.decision?.actor !== "human"
+    || !/^sha256:[0-9a-f]{64}$/.test(firstPayload.receiptDigest)
+    || JSON.stringify(firstPayload).includes("hiddenReasoning")
+  ) {
+    throw new Error("PR6 decision receipt failed its release-boundary checks.");
+  }
+  const renderedDigest = await page.getByTestId("receipt-download").textContent();
+  if (!renderedDigest?.includes(firstPayload.receiptDigest)) {
+    throw new Error("PR6 receipt digest was not visible after the user-triggered download.");
+  }
+  await pause(850);
+
+  await page.reload();
+  await page.waitForFunction(() =>
+    document.querySelector('[data-testid="phase"]')?.textContent?.trim() === "promoted"
+    && document.querySelector('[data-testid="revision"]')?.textContent?.includes("Revision 6")
+  );
+  const persistence = await page.getByTestId("persistence-status").textContent();
+  if (!persistence?.includes("Restored local revision 6")) {
+    throw new Error(`PR6 release proof did not restore its human decision: ${persistence}.`);
+  }
+  await pause(650);
+
+  const secondDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download JSON receipt" }).click();
+  const restoredDownload = await secondDownload;
+  const restoredPath = await restoredDownload.path();
+  if (!restoredPath) throw new Error("PR6 restored receipt did not produce a readable file.");
+  const restoredPayload = JSON.parse(await readFile(restoredPath, "utf8"));
+  if (restoredPayload.receiptDigest !== firstPayload.receiptDigest) {
+    throw new Error(
+      `PR6 restored receipt changed digest from ${firstPayload.receiptDigest} to ${restoredPayload.receiptDigest}.`,
+    );
+  }
+  await pause(650);
+}
+
+async function preparePr6Page(page, promote) {
+  await runPr4AgentComparison(page, false, "PR6");
+  if (!promote) return;
+  await recordPr4HumanDecision(page, false, "PR6");
+  await downloadPr6DecisionReceipt(page);
+}
+
 async function preparePage(page, variant) {
   const health = monitorPage(page);
-  if (proofId === "pr-04") await installWebMcpHarness(page);
+  if (proofId === "pr-04" || proofId === "pr-06") await installWebMcpHarness(page);
   await page.goto(appUrl);
   if (proofId === "pr-01") {
     await preparePr1Page(page, variant === "mobile" ? "authority" : "handoff");
@@ -565,8 +652,10 @@ async function preparePage(page, variant) {
     await preparePr3Page(page, variant === "mobile");
   } else if (proofId === "pr-04") {
     await preparePr4Page(page, variant === "mobile");
-  } else {
+  } else if (proofId === "pr-05") {
     await preparePr5Page(page, variant);
+  } else {
+    await preparePr6Page(page, variant === "mobile");
   }
   await assertHealthy(page, health);
 }
@@ -580,7 +669,7 @@ try {
   });
   const page = await context.newPage();
   const videoHealth = monitorPage(page);
-  if (proofId === "pr-04") await installWebMcpHarness(page);
+  if (proofId === "pr-04" || proofId === "pr-06") await installWebMcpHarness(page);
   await page.goto(appUrl);
   if (proofId === "pr-01") {
     await page.waitForTimeout(550);
@@ -601,11 +690,17 @@ try {
     await page.getByRole("table").scrollIntoViewIfNeeded();
     await page.waitForTimeout(900);
     await recordPr4HumanDecision(page, true);
-  } else {
+  } else if (proofId === "pr-05") {
     await runPr5HandoffComparison(page, true);
     await page.getByRole("table").scrollIntoViewIfNeeded();
     await page.waitForTimeout(900);
     await downloadRestoreAndConfirm(page, true);
+  } else {
+    await runPr4AgentComparison(page, true, "PR6");
+    await page.getByRole("table").scrollIntoViewIfNeeded();
+    await page.waitForTimeout(900);
+    await recordPr4HumanDecision(page, true, "PR6");
+    await downloadPr6DecisionReceipt(page, true);
   }
   await assertHealthy(page, videoHealth);
   await context.close();
@@ -621,7 +716,9 @@ try {
         ? "human-decision-flow.webm"
         : proofId === "pr-04"
           ? "webmcp-collaboration-flow.webm"
-          : "scenario-receipt-recovery-flow.webm";
+          : proofId === "pr-05"
+            ? "scenario-receipt-recovery-flow.webm"
+            : "release-candidate-flow.webm";
   await copyFile(path.join(videoDir, video), path.join(outputDir, videoName));
 
   const desktopContext = await browser.newContext({
@@ -640,7 +737,9 @@ try {
             ? "human-decision-evidence-desktop.png"
             : proofId === "pr-04"
               ? "webmcp-agent-evidence-desktop.png"
-              : "four-scenario-evidence-desktop.png",
+              : proofId === "pr-05"
+                ? "four-scenario-evidence-desktop.png"
+                : "release-candidate-desktop.png",
     ),
     fullPage: true,
   });
@@ -664,14 +763,16 @@ try {
             ? "human-decision-mobile-320.png"
             : proofId === "pr-04"
               ? "webmcp-human-boundary-mobile-320.png"
-              : "receipt-recovery-mobile-320.png",
+              : proofId === "pr-05"
+                ? "receipt-recovery-mobile-320.png"
+                : "release-candidate-mobile-320.png",
     ),
     fullPage: true,
   });
   await mobileContext.close();
 } finally {
   if (browser) await browser.close();
-  server.kill("SIGTERM");
+  server?.kill("SIGTERM");
   await rm(videoDir, { recursive: true, force: true });
 }
 
