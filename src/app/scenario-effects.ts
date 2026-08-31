@@ -13,7 +13,7 @@ export const scenarioEffects: CommandEffects = {
     if (!scenario) {
       throw new LabDomainError(
         "COMMAND_FAILED",
-        `${state.missionId} is cataloged but its deterministic engine fixture is not implemented yet. Choose Completion without proof.`,
+        `No deterministic fixture is registered for ${state.missionId}. Load a mission with an executable fixture.`,
       );
     }
     const result = await runScenarioBaseline(scenario);

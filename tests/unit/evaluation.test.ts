@@ -47,7 +47,7 @@ function trialInput(
 ): CompletionTrialInput {
   const trial = scenario.trials.find((candidate) => candidate.id === trialId);
   if (!trial) throw new Error(`Missing trial ${trialId}.`);
-  return trial.initialState;
+  return trial.initialState as CompletionTrialInput;
 }
 
 function failedSignals(run: TrialRun): readonly SignalName[] {

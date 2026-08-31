@@ -80,7 +80,12 @@ describe("reduceLabState", () => {
         id: "command-4:0",
         commandId: "command-4",
         type: "CANDIDATE_PROMOTED",
-        decision: { outcome: "promoted", actor: "human", comparedRevision: 5 },
+        decision: {
+          outcome: "promoted",
+          actor: "human",
+          comparedRevision: 5,
+          recordedAt: "2026-08-30T12:00:00.000Z",
+        },
       }),
     ];
 
@@ -306,6 +311,30 @@ describe("reduceLabState", () => {
     ).toThrow(/declared fixture identity/);
   });
 
+  it("rejects a non-canonical padded hypothesis at the reducer boundary", () => {
+    const baselineFailed = createBaselineFailedState();
+
+    expect(() => reduceLabState(baselineFailed, {
+      ...meta,
+      id: "padded-patch:0",
+      commandId: "padded-patch",
+      type: "PATCH_STAGED",
+      patch: { ...patch, hypothesis: ` ${patch.hypothesis} ` },
+    })).toThrow(/at most 280 characters editable/);
+  });
+
+  it("rejects valid-enum but impossible actor and source provenance", () => {
+    expect(() => reduceLabState(createInitialLabState(), {
+      ...meta,
+      id: "forged-provenance:0",
+      commandId: "forged-provenance",
+      actor: "human",
+      source: "webmcp",
+      type: "MISSION_LOADED",
+      missionId: "retry",
+    })).toThrow(/invalid human\/webmcp provenance pair/);
+  });
+
   it("rejects a forged non-human promotion event at the reducer boundary", () => {
     const compared = createComparedState();
 
@@ -320,6 +349,7 @@ describe("reduceLabState", () => {
           outcome: "promoted",
           actor: "human",
           comparedRevision: compared.revision,
+          recordedAt: "2026-08-30T12:00:00.000Z",
         },
       }),
     ).toThrow(/must be a human decision/);
@@ -338,6 +368,7 @@ describe("reduceLabState", () => {
           outcome: "rejected",
           actor: "human",
           comparedRevision: compared.revision - 1,
+          recordedAt: "2026-08-30T12:00:00.000Z",
         },
       }),
     ).toThrow(/current compared revision/);
@@ -357,6 +388,7 @@ describe("reduceLabState", () => {
         outcome,
         actor: "human",
         comparedRevision: compared.revision,
+        recordedAt: "2026-08-30T12:00:00.000Z",
       },
     } as unknown as DomainEvent;
 
@@ -382,6 +414,7 @@ describe("reduceLabState", () => {
           outcome: "promoted",
           actor: "human",
           comparedRevision: failed.revision,
+          recordedAt: "2026-08-30T12:00:00.000Z",
         },
       }),
     ).toThrow(/requires a passing candidate suite/);

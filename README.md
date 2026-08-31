@@ -23,7 +23,7 @@ The challenge experience is designed for a person and an agent to use the same v
 
 ## Core demo
 
-The primary fixture, **Completion without proof**, shows a coding agent changing a responsive page, skipping browser QA, missing a 320 px overflow defect, and claiming completion. A candidate harness activates the missing skill and blocks completion until desktop and mobile receipts exist. The lab then runs the original mission plus two sealed cases and compares five signals:
+The lab ships four executable deterministic fixtures: **Completion without proof**, **Broken context handoff**, **Lost tool response**, and **Authority drift**. Each reproduces one target failure, stages one declared harness change, and runs the target plus two sealed cases. The comparison keeps five signals separate:
 
 1. Activation
 2. Adherence
@@ -31,7 +31,9 @@ The primary fixture, **Completion without proof**, shows a coding agent changing
 4. Evidence
 5. Safety
 
-The executable primary fixture generates ordered facts, derives every assertion and five-signal count, and produces canonical SHA-256 result digests. All built-in results are labeled deterministic fixtures. The app does not claim to execute a live model or observe production agents.
+Every fixture generates ordered facts, derives every assertion and five-signal count, and produces reviewed canonical SHA-256 digests. A completed comparison can be downloaded as a strict, versioned JSON receipt with provenance, limitations, candidate diff, human decision when present, and its own canonical digest. Stable workspaces recover from a versioned local snapshot; malformed, stale, structurally invalid, or fixture-digest-mismatched snapshots fall back to a clean mission. Local snapshots are not signed, so recovery does not claim to detect every valid-shape provenance relabeling.
+
+All built-in results are labeled deterministic fixtures. The app does not claim to execute a live model, call an external tool, or observe production agents.
 
 ## Repository map
 
@@ -46,6 +48,8 @@ agent-harness-lab/
 ├── src/
 │   ├── app/                 # Commands, guards, store, selectors
 │   ├── domain/              # Pure state, transitions, graders, hashing
+│   ├── persistence/         # Versioned snapshot validation and recovery status
+│   ├── receipts/            # JSON Schema, builder, verifier, download
 │   ├── scenarios/           # Immutable fixture contracts and facts
 │   └── webmcp/              # Contracts, validation, executors, lifecycle
 └── tests/
@@ -54,7 +58,7 @@ agent-harness-lab/
     └── unit/
 ```
 
-The domain core is independent of React, browser storage, and WebMCP. Human controls and WebMCP executors enter through the same command service. Each command commits one complete stable revision or leaves the workspace unchanged; successful agent commands appear immediately in the visible activity provenance as `agent · webmcp`.
+The domain core is independent of React, browser storage, and WebMCP. Human controls and WebMCP executors enter through the same command service. Each command commits one complete stable revision or leaves the workspace unchanged; successful agent commands appear immediately in the visible activity provenance as `agent · webmcp`. The receipt schema is the canonical portable-output contract at `src/receipts/receipt.schema.json`; WebMCP returns only its bounded digest-bearing summary and never initiates a download.
 
 The adapter follows the current [`document.modelContext` WebMCP draft](https://webmachinelearning.github.io/webmcp/) and [Chrome's tool-security guidance](https://developer.chrome.com/docs/ai/webmcp/secure-tools). It validates inputs again at the application boundary, registers no cross-origin exposure, owns all registrations with one `AbortController`, and keeps each result at or below 1.5K serialized characters. Browsers without WebMCP keep the complete manual workflow.
 

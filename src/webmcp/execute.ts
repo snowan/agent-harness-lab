@@ -2,6 +2,8 @@ import type { CommandService } from "../app/commands";
 import type { LabStore } from "../app/create-store";
 import { LabDomainError, isLabDomainError } from "../domain/errors";
 import { getScenarioDefinition } from "../scenarios/registry";
+import { buildEvidenceReceipt } from "../receipts/build-receipt";
+import { verifyEvidenceReceipt } from "../receipts/validate-receipt";
 import type { WebMcpToolName } from "./contracts";
 import type { WebMcpRuntimeStore } from "./status";
 import { webMcpRuntime } from "./status";
@@ -45,6 +47,9 @@ interface WebMcpExecutorDependencies {
   readonly store: LabStore;
   readonly commands: CommandService;
   readonly runtime?: WebMcpRuntimeStore;
+  readonly now?: () => string;
+  readonly buildReceipt?: typeof buildEvidenceReceipt;
+  readonly verifyReceipt?: typeof verifyEvidenceReceipt;
 }
 
 function abortIfRequested(signal?: AbortSignal): void {
@@ -103,8 +108,14 @@ export function createWebMcpExecutor({
   store,
   commands,
   runtime = webMcpRuntime,
+  now = () => new Date().toISOString(),
+  buildReceipt = buildEvidenceReceipt,
+  verifyReceipt = verifyEvidenceReceipt,
 }: WebMcpExecutorDependencies): WebMcpExecutor {
-  let automaticSequence = 0;
+  let automaticSequence = store.getState().events.reduce((maximum, event) => {
+    const match = /^webmcp:[^:]+:auto-(\d+)$/.exec(event.commandId);
+    return match?.[1] ? Math.max(maximum, Number(match[1])) : maximum;
+  }, 0);
 
   function commandId(
     name: WebMcpToolName,
@@ -175,7 +186,7 @@ export function createWebMcpExecutor({
               if (!scenario) {
                 throw new LabDomainError(
                   "COMMAND_FAILED",
-                  `${state.missionId} is cataloged but has no executable candidate fixture in this release.`,
+                  `No executable candidate fixture is registered for ${state.missionId}.`,
                 );
               }
               return selectWebMcpMutationView(await dispatch(
@@ -209,7 +220,22 @@ export function createWebMcpExecutor({
 
             case "export_evidence_receipt":
               abortIfRequested(options.signal);
-              return selectWebMcpReceiptView(store.getState());
+              {
+                const receiptState = store.getState();
+                const receiptRevision = receiptState.revision;
+                const receipt = await buildReceipt(receiptState, now());
+                const validation = await verifyReceipt(receipt);
+                if (!validation.valid) {
+                  throw new Error("The formal evidence receipt failed local validation.");
+                }
+                if (store.getState().revision !== receiptRevision) {
+                  throw new LabDomainError(
+                    "STALE_REVISION",
+                    `Receipt export started at revision ${receiptRevision}, but the workspace changed before validation completed. Export the latest comparison again.`,
+                  );
+                }
+                return selectWebMcpReceiptView(receiptState, receipt);
+              }
           }
         })();
         const revision = store.getState().revision;

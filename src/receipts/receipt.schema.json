@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-harness-lab.local/schemas/evidence-receipt-1.0.0.json",
+  "title": "Agent Harness Lab evidence receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "createdAt",
+    "fixture",
+    "scenario",
+    "harnesses",
+    "candidate",
+    "runs",
+    "signals",
+    "unresolvedRisks",
+    "limitations",
+    "decision",
+    "provenance",
+    "receiptDigest"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "createdAt": { "$ref": "#/$defs/timestamp" },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "deterministic", "disclosure"],
+      "properties": {
+        "kind": { "const": "built-in-deterministic" },
+        "deterministic": { "const": true },
+        "disclosure": { "type": "string", "minLength": 1, "maxLength": 240 }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "title", "invariant"],
+      "properties": {
+        "id": { "enum": ["completion", "handoff", "retry", "authority"] },
+        "version": { "$ref": "#/$defs/shortString" },
+        "title": { "$ref": "#/$defs/shortString" },
+        "invariant": { "type": "string", "minLength": 1, "maxLength": 400 }
+      }
+    },
+    "harnesses": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "candidate"],
+      "properties": {
+        "baseline": { "$ref": "#/$defs/harness" },
+        "candidate": { "$ref": "#/$defs/harness" }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "layer", "diff", "diffDigest", "evaluatedPatchDigest", "hypothesis"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "layer": { "$ref": "#/$defs/shortString" },
+        "diff": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "type": "string", "minLength": 1, "maxLength": 240 }
+        },
+        "diffDigest": { "$ref": "#/$defs/digest" },
+        "evaluatedPatchDigest": { "$ref": "#/$defs/digest" },
+        "hypothesis": { "type": "string", "minLength": 1, "maxLength": 280 }
+      }
+    },
+    "runs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "target", "sealed", "suite"],
+      "properties": {
+        "baseline": { "$ref": "#/$defs/run" },
+        "target": { "$ref": "#/$defs/run" },
+        "sealed": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/run" }
+        },
+        "suite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "status", "resultDigest"],
+          "properties": {
+            "id": { "$ref": "#/$defs/identifier" },
+            "status": { "enum": ["passed", "failed"] },
+            "resultDigest": { "$ref": "#/$defs/digest" }
+          }
+        }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/signal" }
+    },
+    "unresolvedRisks": {
+      "type": "array",
+      "maxItems": 16,
+      "items": { "type": "string", "minLength": 1, "maxLength": 320 }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": { "type": "string", "minLength": 1, "maxLength": 320 }
+    },
+    "decision": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/decision" }
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events"],
+      "properties": {
+        "events": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/provenanceEvent" }
+        }
+      }
+    },
+    "receiptDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 24,
+      "maxLength": 32
+    },
+    "shortString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "stringIds": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "version": { "$ref": "#/$defs/shortString" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "role",
+        "trialId",
+        "trialKind",
+        "status",
+        "expectationMet",
+        "initialStateDigest",
+        "facts",
+        "assertions",
+        "resultDigest"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "role": { "enum": ["baseline", "candidate"] },
+        "trialId": { "$ref": "#/$defs/identifier" },
+        "trialKind": { "enum": ["target", "sealed"] },
+        "status": { "enum": ["passed", "failed_as_expected", "failed", "unexpected_pass"] },
+        "expectationMet": { "type": "boolean" },
+        "initialStateDigest": { "$ref": "#/$defs/digest" },
+        "facts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/fact" }
+        },
+        "assertions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/assertion" }
+        },
+        "resultDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "factValue": {
+      "oneOf": [
+        { "type": "boolean" },
+        { "type": "integer" },
+        { "type": "string", "maxLength": 320 }
+      ]
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sequence", "key", "label", "value", "detail"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 0, "maximum": 127 },
+        "key": { "$ref": "#/$defs/identifier" },
+        "label": { "$ref": "#/$defs/shortString" },
+        "value": { "$ref": "#/$defs/factValue" },
+        "detail": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "assertionId",
+        "signal",
+        "graderVersion",
+        "title",
+        "status",
+        "expected",
+        "actual",
+        "message",
+        "evidenceFactIds"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "assertionId": { "$ref": "#/$defs/identifier" },
+        "signal": { "enum": ["activation", "adherence", "outcome", "evidence", "safety"] },
+        "graderVersion": { "const": "1.0.0" },
+        "title": { "$ref": "#/$defs/shortString" },
+        "status": { "enum": ["passed", "failed", "not_applicable"] },
+        "expected": { "$ref": "#/$defs/factValue" },
+        "actual": { "$ref": "#/$defs/factValue" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "evidenceFactIds": { "$ref": "#/$defs/stringIds" }
+      }
+    },
+    "signalSide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "failed", "notApplicable", "assertionResultIds", "evidenceFactIds"],
+      "properties": {
+        "passed": { "type": "integer", "minimum": 0, "maximum": 128 },
+        "failed": { "type": "integer", "minimum": 0, "maximum": 128 },
+        "notApplicable": { "type": "integer", "minimum": 0, "maximum": 128 },
+        "assertionResultIds": { "$ref": "#/$defs/stringIds" },
+        "evidenceFactIds": { "$ref": "#/$defs/stringIds" }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "baseline", "candidate"],
+      "properties": {
+        "name": { "enum": ["activation", "adherence", "outcome", "evidence", "safety"] },
+        "baseline": { "$ref": "#/$defs/signalSide" },
+        "candidate": { "$ref": "#/$defs/signalSide" }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "actor", "comparedRevision", "recordedAt"],
+      "properties": {
+        "outcome": { "enum": ["promoted", "rejected"] },
+        "actor": { "const": "human" },
+        "comparedRevision": { "type": "integer", "minimum": 0 },
+        "recordedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "provenanceEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "commandId", "type", "actor", "source"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "commandId": { "$ref": "#/$defs/identifier" },
+        "type": {
+          "enum": [
+            "MISSION_LOADED",
+            "WORKSPACE_RESET",
+            "BASELINE_RUN_STARTED",
+            "BASELINE_FAILED_AS_EXPECTED",
+            "PATCH_STAGED",
+            "CANDIDATE_RUN_STARTED",
+            "CANDIDATE_SUITE_COMPLETED",
+            "CANDIDATE_PROMOTED",
+            "CANDIDATE_REJECTED"
+          ]
+        },
+        "actor": { "enum": ["human", "agent", "system"] },
+        "source": { "enum": ["ui", "webmcp", "bootstrap", "test"] }
+      }
+    }
+  }
+}

@@ -43,7 +43,8 @@ agent-harness-lab/
 ├── src/
 │   ├── app/
 │   │   ├── commands.ts          # validated application commands
-│   │   ├── create-store.ts      # reducer, subscriptions, persistence
+│   │   ├── create-store.ts      # subscriptions and stable commits
+│   │   ├── runtime.ts           # store, commands, snapshot integration
 │   │   └── selectors.ts         # compact UI and tool result views
 │   ├── domain/
 │   │   ├── harness.ts           # layers, versions, candidate patches
@@ -54,7 +55,8 @@ agent-harness-lab/
 │   │   └── reducer.ts           # pure state transition function
 │   ├── scenarios/
 │   │   ├── completion-without-proof.ts
-│   │   ├── broken-handoff.ts
+│   │   ├── broken-context-handoff.ts
+│   │   ├── declared-facts.ts
 │   │   ├── lost-tool-response.ts
 │   │   └── authority-drift.ts
 │   ├── webmcp/
@@ -64,7 +66,11 @@ agent-harness-lab/
 │   │   └── results.ts           # bounded, structured tool responses
 │   ├── receipts/
 │   │   ├── build-receipt.ts
+│   │   ├── download-receipt.ts
 │   │   └── receipt.schema.json
+│   ├── persistence/
+│   │   ├── snapshot.ts
+│   │   └── status.ts
 │   ├── ui/
 │   │   ├── components/
 │   │   ├── screens/
@@ -108,13 +114,13 @@ The domain should expose a small command union such as `LOAD_MISSION`, `RUN_BASE
 
 Evaluation is assertion-based. Each scenario declares target and sealed trials, required activations, allowed trajectories, outcome checks, and safety invariants. A run produces facts; graders produce observations from facts. The UI never stores a manually entered score.
 
-Receipts include schema version, scenario and harness versions, candidate diff, run identifiers, assertion results, unresolved risks, provenance, decision, and deterministic content hashes. Raw model reasoning is not required and should not be exported.
+Receipts include schema version, scenario and harness versions, candidate diff, run identifiers, full declared facts and assertion results with evidence references, signal summaries, unresolved risks, provenance, decision, and deterministic content hashes. Raw model reasoning is not required and should not be exported.
 
 ## WebMCP implementation rules
 
 - Register compact tools: `get_lab_state`, `load_mission`, `run_baseline`, `inspect_trace`, `stage_harness_patch`, `run_candidate_suite`, `compare_harnesses`, and `export_evidence_receipt`.
 - Keep tool descriptions under Chrome’s recommended character budgets, return bounded summaries rather than the entire trace, and enforce the 1.5K serialized result ceiling at the executor boundary.
-- Mark true reads with `readOnlyHint`; mark state and receipt reads with `untrustedContentHint` because they can contain a user-authored hypothesis.
+- Mark true reads with `readOnlyHint`; mark the state read with `untrustedContentHint` because it can contain a bounded user-authored hypothesis excerpt. The receipt summary omits authored text.
 - Reuse the validated command layer. Reject invalid scenario IDs, patch layers, and out-of-order actions.
 - Use an `AbortController` to unregister tools on hot reload or page teardown.
 - Do not expose tools across origins for the MVP.

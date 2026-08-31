@@ -8,6 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { labCommands, labStore } from "../app/runtime";
+import { LabDomainError } from "../domain/errors";
 import {
   selectActionAvailability,
   selectBaselineRunAvailability,
@@ -41,6 +42,10 @@ import {
   getScenarioDefinition,
   isScenarioImplemented,
 } from "../scenarios/registry";
+import { persistenceRuntime } from "../persistence/status";
+import { buildEvidenceReceipt } from "../receipts/build-receipt";
+import { downloadEvidenceReceipt } from "../receipts/download-receipt";
+import { verifyEvidenceReceipt } from "../receipts/validate-receipt";
 import { WEBMCP_TOOL_CONTRACTS } from "../webmcp/contracts";
 import {
   webMcpRuntime,
@@ -60,17 +65,21 @@ type PendingAction =
   | "candidate"
   | "promote"
   | "reject"
+  | "receipt"
   | "reset";
 
 const SIGNAL_EXPLANATIONS = {
-  activation: "Did the changed task activate the intended harness artifact?",
-  adherence: "Did the trajectory follow the artifact after activation?",
-  outcome: "Did externally visible acceptance checks pass?",
-  evidence: "Do the completion claim and receipts prove the result?",
-  safety: "Did the run preserve scope and external-effect boundaries?",
+  activation: "Did this mission activate the intended harness control?",
+  adherence: "Did the trajectory follow the declared control after activation?",
+  outcome: "Did the mission-specific target outcome improve?",
+  evidence: "Do named facts and assertions support the result?",
+  safety: "Did the run preserve scope, authority, and external-effect boundaries?",
 } as const;
 
-let commandSequence = 0;
+let commandSequence = labStore.getState().events.reduce((maximum, event) => {
+  const match = /^ui-(\d+)$/.exec(event.commandId);
+  return match?.[1] ? Math.max(maximum, Number(match[1])) : maximum;
+}, 0);
 
 function nextCommandId(): string {
   commandSequence += 1;
@@ -149,7 +158,7 @@ function MissionRail({
       <div className="rail-section">
         <div className="rail-heading">
           <h2 id="missions-heading">Failure missions</h2>
-          <span className="count">04 missions · 01 executable</span>
+          <span className="count">04 missions · 04 executable</span>
         </div>
         <div className="mission-list">
           {MISSION_CATALOG.map((entry) => (
@@ -332,7 +341,7 @@ function TrajectoryView({
         </article>
         <article className="brief-card invariant">
           <span>Mission invariant</span>
-          <p>{scenario?.invariant ?? "This catalog entry does not have an executable invariant yet."}</p>
+          <p>{scenario?.invariant ?? "No executable invariant is registered for this mission."}</p>
         </article>
       </div>
       <div className="timeline-grid">
@@ -342,14 +351,14 @@ function TrajectoryView({
           trace={baseline}
           lockedCopy={scenario
             ? "Run the deterministic baseline to reveal ordered facts and the failed invariant."
-            : "This mission is cataloged but not executable in the current release."}
+            : "No executable fixture is registered for this mission."}
         />
         <TracePanel
           title="Candidate trajectory"
           role="candidate"
           trace={candidate}
           lockedCopy={!scenario
-            ? "This catalog entry has no executable candidate fixture in the current release."
+            ? "No executable candidate fixture is registered for this mission."
             : baseline
               ? "Review and stage the candidate, then run the target and two sealed fixtures."
               : "Reproduce the baseline before proposing a candidate harness change."}
@@ -380,7 +389,7 @@ function PatchView({
 }) {
   const hypothesisId = useId();
   if (!patch) {
-    return <div className="locked-state wide"><p>No candidate fixture is implemented for this mission yet.</p></div>;
+    return <div className="locked-state wide"><p>No executable candidate is registered for this mission.</p></div>;
   }
   if (!baselineReady) {
     return (
@@ -390,18 +399,13 @@ function PatchView({
       </div>
     );
   }
-  const activation = candidateTrace?.facts.find(
-    (fact) => fact.key === "artifact.browser_qa.loaded",
-  );
-  const recheck = candidateTrace?.facts.find(
-    (fact) => fact.key === "repair.rechecked",
-  );
-  const outcome = candidateTrace?.facts.find(
-    (fact) => fact.key === "outcome.mobile_320.no_overflow",
-  );
-  const evidence = candidateTrace?.facts.find(
-    (fact) => fact.key === "completion.receipts_cited",
-  );
+  const causalFact = (signal: keyof typeof SIGNAL_EXPLANATIONS) =>
+    candidateTrace?.facts.filter((fact) => fact.signals.includes(signal)).at(-1);
+  const activation = causalFact("activation");
+  const adherence = causalFact("adherence");
+  const outcome = causalFact("outcome");
+  const evidence = causalFact("evidence");
+  const safety = causalFact("safety");
   const editable = patch.status === "draft";
 
   return (
@@ -454,10 +458,11 @@ function PatchView({
         </header>
         <div className="causal-body">
           <div className="causal-step"><strong>Patch</strong><span>{patch.mechanism}</span></div>
-          <div className="causal-step"><strong>Activation</strong><span>{activation?.detail ?? "Observe whether UI work loads browser QA."}</span></div>
-          <div className="causal-step"><strong>Adherence</strong><span>{recheck?.detail ?? "Observe desktop, 320 px, and post-repair checks."}</span></div>
-          <div className="causal-step"><strong>Outcome</strong><span>{outcome?.detail ?? "Check the repaired 320 px layout and reachable actions."}</span></div>
-          <div className="causal-step"><strong>Evidence</strong><span>{evidence?.detail ?? "Require final receipts before completion."}</span></div>
+          <div className="causal-step"><strong>Activation</strong><span>{activation?.detail ?? "Observe whether the intended harness control activates."}</span></div>
+          <div className="causal-step"><strong>Adherence</strong><span>{adherence?.detail ?? "Observe whether the trajectory follows the declared control."}</span></div>
+          <div className="causal-step"><strong>Outcome</strong><span>{outcome?.detail ?? "Check the mission-specific target outcome."}</span></div>
+          <div className="causal-step"><strong>Evidence</strong><span>{evidence?.detail ?? "Require named facts and assertions for the result."}</span></div>
+          <div className="causal-step"><strong>Safety</strong><span>{safety?.detail ?? "Confirm scope, authority, and external-effect boundaries."}</span></div>
         </div>
       </article>
     </div>
@@ -481,7 +486,7 @@ function EvidenceView({
     return (
       <div className="locked-state wide">
         <span aria-hidden="true">—</span>
-        <p>This catalog entry has no executable baseline, candidate, or sealed evidence in the current release.</p>
+        <p>No executable baseline, candidate, or sealed evidence is registered for this mission.</p>
       </div>
     );
   }
@@ -632,6 +637,8 @@ function ReviewRail({
   pending,
   onPromote,
   onReject,
+  onExportReceipt,
+  receipt,
 }: {
   readonly state: LabState;
   readonly patch: CandidatePatchView | null;
@@ -640,6 +647,8 @@ function ReviewRail({
   readonly pending: PendingAction | null;
   readonly onPromote: () => void;
   readonly onReject: () => void;
+  readonly onExportReceipt: () => void;
+  readonly receipt: { readonly filename: string; readonly digest: string } | null;
 }) {
   const events = selectCurrentWorkspaceEvents(state, 8);
   const decisionHelpId = useId();
@@ -667,7 +676,7 @@ function ReviewRail({
             <p>{patch.stagedHypothesis ?? "Review the declared diff and write a causal hypothesis."}</p>
             <small>{patch.status}</small>
           </div>
-        ) : <p className="empty-candidate">No executable candidate exists for this catalog entry.</p>}
+        ) : <p className="empty-candidate">No executable candidate is registered for this mission.</p>}
       </div>
 
       <div className="rail-section">
@@ -713,6 +722,22 @@ function ReviewRail({
             </button>
           </div>
           <small id={decisionHelpId}>Human-only controls. They are not part of the registered WebMCP tool set.</small>
+          <div className="receipt-actions">
+            <button
+              className="button"
+              type="button"
+              disabled={!state.candidateSuiteResult || pending !== null}
+              onClick={onExportReceipt}
+            >
+              {pending === "receipt" ? "Preparing receipt…" : "Download JSON receipt"}
+            </button>
+            {receipt ? (
+              <p data-testid="receipt-download">
+                <strong>{receipt.filename}</strong>
+                <code>{receipt.digest}</code>
+              </p>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -824,6 +849,11 @@ export default function LabApp() {
     webMcpRuntime.getSnapshot,
     webMcpRuntime.getSnapshot,
   );
+  const persistence = useSyncExternalStore(
+    persistenceRuntime.subscribe,
+    persistenceRuntime.getSnapshot,
+    persistenceRuntime.getSnapshot,
+  );
   const [activeView, setActiveView] = useState<RunView>("trajectory");
   const [hypothesis, setHypothesis] = useState(
     scenario?.candidate.patch.hypothesis ?? "",
@@ -831,6 +861,10 @@ export default function LabApp() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [message, setMessage] = useState("Workspace ready. Reproduce the baseline to begin.");
   const [error, setError] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<{
+    readonly filename: string;
+    readonly digest: string;
+  } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const pendingRef = useRef<PendingAction | null>(null);
   const mountedRef = useRef(true);
@@ -874,6 +908,16 @@ export default function LabApp() {
       setActiveView("evidence");
     }
   }, [webMcp.lastCall]);
+
+  useEffect(() => {
+    setReceipt(null);
+  }, [state.revision]);
+
+  useEffect(() => {
+    if (persistence.state !== "error") return;
+    setError(persistence.message);
+    setMessage("The command completed in memory, but refresh recovery is unavailable.");
+  }, [persistence]);
 
   function focusTab(view: RunView): void {
     requestAnimationFrame(() => {
@@ -1004,6 +1048,40 @@ export default function LabApp() {
     }
   }
 
+  async function exportReceipt() {
+    if (pendingRef.current || !state.candidateSuiteResult) return;
+    pendingRef.current = "receipt";
+    setPending("receipt");
+    setError(null);
+    setMessage("Building and validating the canonical evidence receipt…");
+    try {
+      const built = await buildEvidenceReceipt(state);
+      const validation = await verifyEvidenceReceipt(built);
+      if (!validation.valid) {
+        throw new Error(`Receipt validation failed: ${validation.errors.join(" ")}`);
+      }
+      if (labStore.getState().revision !== state.revision) {
+        throw new LabDomainError(
+          "STALE_REVISION",
+          `Receipt export started at revision ${state.revision}, but the workspace changed before validation completed. Export the latest comparison again.`,
+        );
+      }
+      const filename = downloadEvidenceReceipt(built);
+      if (mountedRef.current) {
+        setReceipt({ filename, digest: built.receiptDigest });
+        setMessage(`Downloaded ${filename} with a verified canonical digest.`);
+      }
+    } catch (caught) {
+      if (mountedRef.current) {
+        setError(caught instanceof Error ? caught.message : String(caught));
+        setMessage("The receipt was not downloaded. Review the validation error and retry.");
+      }
+    } finally {
+      pendingRef.current = null;
+      if (mountedRef.current) setPending(null);
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="masthead">
@@ -1032,6 +1110,14 @@ export default function LabApp() {
             <p className="eyebrow">Harness reliability workbench</p>
             <h1 id="page-title">Prove the harness change before you trust it.</h1>
             <p>Reproduce a failure, inspect its trajectory, stage one patch, run sealed checks, and leave the final promotion decision with a person.</p>
+            <p
+              className="persistence-status"
+              data-state={persistence.state}
+              data-testid="persistence-status"
+              title={persistence.message}
+            >
+              <span aria-hidden="true" /> Local recovery · {persistence.message}
+            </p>
           </div>
           <aside className="intro-proof" aria-label="Lab measurement promise">
             <span>Measurement contract</span><strong>5 signals</strong><p>Activation, adherence, outcome, evidence, and safety stay separate.</p>
@@ -1049,11 +1135,11 @@ export default function LabApp() {
                   <h2 id="run-heading">{mission.title}</h2>
                   <p>{scenario?.invariant ?? mission.failure}</p>
                   <small className="fixture-disclosure">
-                    {scenario?.fixtureDisclosure ?? "Catalog entry only — no executable fixture is registered in this release."}
+                    {scenario?.fixtureDisclosure ?? "No executable fixture is registered for this mission."}
                   </small>
                   <div className="version-row">
-                    <span>Baseline {scenario?.baseline.version ?? "not implemented"}</span>
-                    <span>Candidate {scenario?.candidate.version ?? "not implemented"}</span>
+                    <span>Baseline {scenario?.baseline.version ?? "unavailable"}</span>
+                    <span>Candidate {scenario?.candidate.version ?? "unavailable"}</span>
                     <span data-testid="revision">Revision {state.revision}</span>
                   </div>
                 </div>
@@ -1128,6 +1214,8 @@ export default function LabApp() {
             pending={pending}
             onPromote={() => decide("PROMOTE")}
             onReject={() => decide("REJECT")}
+            onExportReceipt={exportReceipt}
+            receipt={receipt}
           />
         </section>
 

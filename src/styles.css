@@ -204,6 +204,40 @@ pre {
   margin-bottom: 30px;
 }
 
+.persistence-status {
+  width: fit-content;
+  max-width: min(100%, 70ch);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0 0;
+  padding: 6px 9px;
+  border: 1px solid #c8d1d9;
+  border-radius: 999px;
+  color: #566273;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 0.67rem;
+  line-height: 1.35;
+}
+
+.persistence-status > span {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #8994a8;
+}
+
+.persistence-status[data-state="saved"] > span,
+.persistence-status[data-state="restored"] > span {
+  background: var(--teal);
+}
+
+.persistence-status[data-state="fallback"] > span,
+.persistence-status[data-state="error"] > span {
+  background: var(--orange);
+}
+
 .eyebrow,
 .micro {
   margin: 0;
@@ -1468,6 +1502,40 @@ pre {
   line-height: 1.4;
 }
 
+.receipt-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(16, 26, 47, 0.12);
+}
+
+.receipt-actions .button {
+  width: 100%;
+}
+
+.receipt-actions p {
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid #afd7c9;
+  border-radius: 6px;
+  color: #265e4d;
+  background: var(--teal-soft);
+  font-size: 0.59rem;
+  line-height: 1.4;
+}
+
+.receipt-actions strong,
+.receipt-actions code {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.receipt-actions code {
+  margin-top: 5px;
+}
+
 .activity-list {
   display: grid;
   gap: 7px;
@@ -1831,6 +1899,11 @@ dialog::backdrop {
 
   .intro h1 {
     font-size: clamp(2.35rem, 13vw, 3.65rem);
+  }
+
+  .persistence-status {
+    width: 100%;
+    border-radius: 8px;
   }
 
   .mission-list,

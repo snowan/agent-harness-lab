@@ -1,13 +1,13 @@
 import { spawn } from "node:child_process";
-import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "@playwright/test";
 
 const proofId = process.argv[2];
-const supportedProofs = new Set(["pr-01", "pr-02", "pr-03", "pr-04"]);
+const supportedProofs = new Set(["pr-01", "pr-02", "pr-03", "pr-04", "pr-05"]);
 
 if (!supportedProofs.has(proofId)) {
-  throw new Error("Use `npm run proof:pr1`, `npm run proof:pr2`, `npm run proof:pr3`, or `npm run proof:pr4`.");
+  throw new Error("Use an available proof script from `npm run proof:pr1` through `npm run proof:pr5`.");
 }
 
 const expectedWebMcpTools = [
@@ -426,6 +426,133 @@ async function preparePr4Page(page, promote) {
   if (promote) await recordPr4HumanDecision(page);
 }
 
+async function runPr5HandoffComparison(page, paced = false) {
+  const pause = async (duration = 500) => {
+    if (paced) await page.waitForTimeout(duration);
+  };
+
+  await page.getByRole("button", { name: /H2.*Broken context handoff/ }).click();
+  await page.getByRole("heading", { name: "Broken context handoff" }).waitFor();
+  await pause(650);
+  await page.getByRole("button", { name: "Run deterministic baseline" }).click();
+  await page.waitForFunction(() =>
+    document.querySelector('[data-testid="phase"]')?.textContent?.trim() === "baseline failed"
+  );
+  await pause(750);
+  if (paced) {
+    await page.getByRole("heading", { name: "Baseline trajectory" }).scrollIntoViewIfNeeded();
+    await pause(850);
+  }
+
+  await page.getByRole("button", { name: "Review candidate patch" }).click();
+  const hypothesis = page.getByLabel("Causal hypothesis");
+  await hypothesis.fill(
+    "Validated checkpoints should preserve the blocker and resume from the next planned action.",
+  );
+  await pause(650);
+  await page.getByRole("button", { name: "Stage declared patch" }).click();
+  await page.getByRole("button", { name: "Run target + 2 sealed" }).waitFor();
+  await pause(650);
+  await page.getByRole("button", { name: "Run target + 2 sealed" }).click();
+  await page.getByRole("table").waitFor();
+  await pause(900);
+
+  const phase = await page.getByTestId("phase").textContent();
+  const revision = await page.getByTestId("revision").textContent();
+  const rows = await page.getByRole("table").locator("tbody tr").count();
+  const sealed = await page.locator('.sealed-card[data-status="passed"]').count();
+  const recovery = await page.getByTestId("persistence-status").textContent();
+  if (
+    phase?.trim() !== "compared"
+    || !revision?.includes("Revision 6")
+    || rows !== 5
+    || sealed !== 2
+    || !recovery?.includes("Saved local revision 6 for handoff")
+  ) {
+    throw new Error(
+      `PR5 proof expected handoff compared revision 6 with five signals, two passing sealed trials, and a saved snapshot; received ${phase}/${revision}/${rows}/${sealed}/${recovery}.`,
+    );
+  }
+}
+
+async function downloadRestoreAndConfirm(page, paced = false) {
+  const pause = async (duration = 500) => {
+    if (paced) await page.waitForTimeout(duration);
+  };
+  const phase = (await page.getByTestId("phase").textContent())?.trim();
+  const revision = await page.getByTestId("revision").textContent();
+  if (phase !== "compared" || !revision) {
+    throw new Error(`PR5 recovery proof requires a compared workspace; received ${phase}/${revision}.`);
+  }
+
+  const firstDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download JSON receipt" }).click();
+  const downloaded = await firstDownload;
+  if (!downloaded.suggestedFilename().endsWith(".json")) {
+    throw new Error(`PR5 receipt used an unexpected filename ${downloaded.suggestedFilename()}.`);
+  }
+  const firstReceipt = await page.getByTestId("receipt-download").textContent();
+  if (!firstReceipt || !/sha256:[0-9a-f]{64}/.test(firstReceipt)) {
+    throw new Error("PR5 proof did not render the verified receipt digest.");
+  }
+  const firstPath = await downloaded.path();
+  if (!firstPath) throw new Error("PR5 receipt download did not produce a readable file.");
+  const firstPayload = JSON.parse(await readFile(firstPath, "utf8"));
+  if (
+    firstPayload.schemaVersion !== "1.0.0"
+    || !/^sha256:[0-9a-f]{64}$/.test(firstPayload.receiptDigest)
+    || !Array.isArray(firstPayload.runs?.baseline?.facts)
+    || !Array.isArray(firstPayload.runs?.baseline?.assertions)
+  ) {
+    throw new Error("PR5 first receipt did not contain the formal schema, digest, facts, and assertions.");
+  }
+  await pause(850);
+
+  await page.reload();
+  await page.waitForFunction(
+    ({ expectedPhase, expectedRevision }) =>
+      document.querySelector('[data-testid="phase"]')?.textContent?.trim() === expectedPhase
+      && document.querySelector('[data-testid="revision"]')?.textContent?.includes(expectedRevision),
+    { expectedPhase: phase, expectedRevision: revision },
+  );
+  const persistence = page.getByTestId("persistence-status");
+  if (
+    await persistence.getAttribute("data-state") !== "restored"
+    || !(await persistence.textContent())?.includes("Restored local revision")
+  ) {
+    throw new Error(`PR5 proof did not restore its stable snapshot: ${await persistence.textContent()}.`);
+  }
+  await page.getByRole("button", { name: "Review evidence" }).click();
+  await page.getByRole("table").waitFor();
+  await pause(750);
+
+  const secondDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download JSON receipt" }).click();
+  const restoredDownload = await secondDownload;
+  const restoredPath = await restoredDownload.path();
+  if (!restoredPath) throw new Error("PR5 restored receipt did not produce a readable file.");
+  const restoredPayload = JSON.parse(await readFile(restoredPath, "utf8"));
+  if (restoredPayload.receiptDigest !== firstPayload.receiptDigest) {
+    throw new Error(
+      `PR5 restored receipt changed canonical digest from ${firstPayload.receiptDigest} to ${restoredPayload.receiptDigest}.`,
+    );
+  }
+  const finalReceipt = await page.getByTestId("receipt-download").textContent();
+  if (!finalReceipt || !finalReceipt.includes(restoredPayload.receiptDigest)) {
+    throw new Error("PR5 restored proof did not reproduce a verified receipt digest.");
+  }
+  await pause(850);
+}
+
+async function preparePr5Page(page, variant) {
+  if (variant === "desktop") {
+    await runPr5HandoffComparison(page);
+    return;
+  }
+  await runPr3Comparison(page);
+  await downloadRestoreAndConfirm(page);
+}
+
 async function preparePage(page, variant) {
   const health = monitorPage(page);
   if (proofId === "pr-04") await installWebMcpHarness(page);
@@ -436,8 +563,10 @@ async function preparePage(page, variant) {
     await preparePr2Page(page);
   } else if (proofId === "pr-03") {
     await preparePr3Page(page, variant === "mobile");
-  } else {
+  } else if (proofId === "pr-04") {
     await preparePr4Page(page, variant === "mobile");
+  } else {
+    await preparePr5Page(page, variant);
   }
   await assertHealthy(page, health);
 }
@@ -467,11 +596,16 @@ try {
     await page.getByRole("table").scrollIntoViewIfNeeded();
     await page.waitForTimeout(900);
     await recordPr3Decision(page);
-  } else {
+  } else if (proofId === "pr-04") {
     await runPr4AgentComparison(page, true);
     await page.getByRole("table").scrollIntoViewIfNeeded();
     await page.waitForTimeout(900);
     await recordPr4HumanDecision(page, true);
+  } else {
+    await runPr5HandoffComparison(page, true);
+    await page.getByRole("table").scrollIntoViewIfNeeded();
+    await page.waitForTimeout(900);
+    await downloadRestoreAndConfirm(page, true);
   }
   await assertHealthy(page, videoHealth);
   await context.close();
@@ -485,7 +619,9 @@ try {
       ? "baseline-engine.webm"
       : proofId === "pr-03"
         ? "human-decision-flow.webm"
-        : "webmcp-collaboration-flow.webm";
+        : proofId === "pr-04"
+          ? "webmcp-collaboration-flow.webm"
+          : "scenario-receipt-recovery-flow.webm";
   await copyFile(path.join(videoDir, video), path.join(outputDir, videoName));
 
   const desktopContext = await browser.newContext({
@@ -502,7 +638,9 @@ try {
           ? "baseline-engine-desktop.png"
           : proofId === "pr-03"
             ? "human-decision-evidence-desktop.png"
-            : "webmcp-agent-evidence-desktop.png",
+            : proofId === "pr-04"
+              ? "webmcp-agent-evidence-desktop.png"
+              : "four-scenario-evidence-desktop.png",
     ),
     fullPage: true,
   });
@@ -524,7 +662,9 @@ try {
           ? "baseline-engine-mobile-320.png"
           : proofId === "pr-03"
             ? "human-decision-mobile-320.png"
-            : "webmcp-human-boundary-mobile-320.png",
+            : proofId === "pr-04"
+              ? "webmcp-human-boundary-mobile-320.png"
+              : "receipt-recovery-mobile-320.png",
     ),
     fullPage: true,
   });

@@ -49,7 +49,7 @@ export function selectBaselineRunAvailability(
   if (!isScenarioImplemented(state.missionId)) {
     return {
       available: false,
-      reason: "This cataloged mission does not have an executable fixture yet.",
+      reason: "No executable fixture is registered for this mission.",
     };
   }
   if (!isCommandAllowed(state, { type: "RUN_BASELINE" }, actor)) {
@@ -370,7 +370,7 @@ export function selectDecisionAvailability(
     return {
       canPromote: false,
       canReject: false,
-      reason: "This catalog entry has no executable comparison or decision gate in the current release.",
+      reason: "No executable comparison or decision gate is registered for this mission.",
     };
   }
   const compared = state.phase === "compared";

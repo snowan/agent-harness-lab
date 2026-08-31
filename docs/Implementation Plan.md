@@ -181,6 +181,8 @@ Acceptance:
 - Receipt allowlist excludes hidden reasoning and unexpected fields.
 - Invalid or stale local snapshots fall back to a clean mission.
 
+**Implementation note (August 30, 2026):** This slice is implemented with four executable fixtures, reviewed golden digests, strict receipt validation and download, and replay-validated local recovery. Unit coverage repeats every fixture 20 times; contract coverage completes all four through WebMCP; browser coverage refreshes the baseline, staged-patch, comparison, and promotion states and verifies the downloaded receipt digest. Unit coverage additionally round-trips the clean and rejected stable states.
+
 ### PR 6 — Release candidate, deployment, and submission assets
 
 **Purpose:** Turn the working build into a judge-ready submission.

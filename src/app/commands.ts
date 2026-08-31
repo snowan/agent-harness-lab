@@ -5,6 +5,7 @@ import {
   verifyTrialRun,
 } from "../domain/evaluation";
 import { reduceLabEvents, reduceLabState } from "../domain/reducer";
+import { isAllowedActorSourcePair } from "../domain/provenance";
 import type {
   CommandContext,
   CommandResult,
@@ -49,6 +50,7 @@ interface CommandServiceDependencies {
   readonly store: LabStore;
   readonly effects: CommandEffects;
   readonly ids: CommandIdFactory;
+  readonly now?: () => string;
 }
 
 interface CompletedCommand {
@@ -82,9 +84,13 @@ function commandFingerprint(command: LabCommand, context: CommandContext): strin
   return JSON.stringify([context.actor, context.source, request]);
 }
 
-function eventMeta(context: CommandContext, index: number) {
+function eventMeta(
+  context: CommandContext,
+  index: number,
+  baseRevision: number,
+) {
   return {
-    id: `${context.commandId}:${index}`,
+    id: `${context.commandId}:revision-${baseRevision + index + 1}`,
     commandId: context.commandId,
     actor: context.actor,
     source: context.source,
@@ -109,6 +115,26 @@ function assertCommandId(context: CommandContext): void {
   }
 }
 
+function assertCommandProvenance(context: CommandContext): void {
+  if (!isAllowedActorSourcePair(context.actor, context.source)) {
+    throw new LabDomainError(
+      "ACTOR_NOT_AUTHORIZED",
+      `Actor ${context.actor} cannot issue commands through ${context.source}. Use the declared human, agent, or system entry point.`,
+    );
+  }
+}
+
+function normalizeCommand(command: LabCommand): LabCommand {
+  if (command.type !== "STAGE_PATCH") return command;
+  return {
+    ...command,
+    patch: {
+      ...command.patch,
+      hypothesis: command.patch.hypothesis.trim(),
+    },
+  };
+}
+
 function commandFailure(
   command: LabCommand,
   state: LabState,
@@ -129,7 +155,7 @@ function requireScenario(state: LabState) {
   if (!scenario) {
     throw new LabDomainError(
       "COMMAND_FAILED",
-      `${state.missionId} is cataloged but its deterministic engine fixture is not implemented yet. Choose Completion without proof.`,
+      `No deterministic fixture is registered for ${state.missionId}. Load a mission with an executable fixture.`,
     );
   }
   return scenario;
@@ -173,6 +199,7 @@ export function createCommandService({
   store,
   effects,
   ids,
+  now = () => new Date().toISOString(),
 }: CommandServiceDependencies): CommandService {
   const completed = new Map<string, CompletedCommand>();
   let activeCommandId: string | null = null;
@@ -182,11 +209,16 @@ export function createCommandService({
     context: CommandContext,
     stableState: LabState,
   ): Promise<readonly DomainEvent[]> {
+    const meta = (index: number) => eventMeta(
+      context,
+      index,
+      stableState.revision,
+    );
     switch (command.type) {
       case "LOAD_MISSION":
         return [
           {
-            ...eventMeta(context, 0),
+            ...meta(0),
             type: "MISSION_LOADED",
             missionId: command.missionId,
           },
@@ -195,7 +227,7 @@ export function createCommandService({
       case "RESET":
         return [
           {
-            ...eventMeta(context, 0),
+            ...meta(0),
             type: "WORKSPACE_RESET",
           },
         ];
@@ -204,7 +236,7 @@ export function createCommandService({
         const scenario = requireScenario(stableState);
         const runId = ids.nextRunId("baseline", stableState);
         const started: DomainEvent = {
-          ...eventMeta(context, 0),
+          ...meta(0),
           type: "BASELINE_RUN_STARTED",
           runId,
         };
@@ -230,7 +262,7 @@ export function createCommandService({
         return [
           started,
           {
-            ...eventMeta(context, 1),
+            ...meta(1),
             type: "BASELINE_FAILED_AS_EXPECTED",
             runId,
             result,
@@ -242,7 +274,7 @@ export function createCommandService({
         assertFixturePatchIdentity(stableState, command.patch);
         return [
           {
-            ...eventMeta(context, 0),
+            ...meta(0),
             type: "PATCH_STAGED",
             patch: command.patch,
           },
@@ -260,7 +292,7 @@ export function createCommandService({
         await verifyTrialRun(scenario, stableState.baselineResult);
         const runId = ids.nextRunId("candidate", stableState);
         const started: DomainEvent = {
-          ...eventMeta(context, 0),
+          ...meta(0),
           type: "CANDIDATE_RUN_STARTED",
           runId,
         };
@@ -275,7 +307,7 @@ export function createCommandService({
         return [
           started,
           {
-            ...eventMeta(context, 1),
+            ...meta(1),
             type: "CANDIDATE_SUITE_COMPLETED",
             runId,
             suite,
@@ -286,12 +318,13 @@ export function createCommandService({
       case "PROMOTE":
         return [
           {
-            ...eventMeta(context, 0),
+            ...meta(0),
             type: "CANDIDATE_PROMOTED",
             decision: {
               outcome: "promoted",
               actor: "human",
               comparedRevision: command.comparedRevision,
+              recordedAt: now(),
             },
           },
         ];
@@ -299,12 +332,13 @@ export function createCommandService({
       case "REJECT":
         return [
           {
-            ...eventMeta(context, 0),
+            ...meta(0),
             type: "CANDIDATE_REJECTED",
             decision: {
               outcome: "rejected",
               actor: "human",
               comparedRevision: command.comparedRevision,
+              recordedAt: now(),
             },
           },
         ];
@@ -314,9 +348,11 @@ export function createCommandService({
   return {
     async dispatch(command, context) {
       assertCommandId(context);
+      assertCommandProvenance(context);
       abortIfRequested(context);
 
-      const fingerprint = commandFingerprint(command, context);
+      const normalizedCommand = normalizeCommand(command);
+      const fingerprint = commandFingerprint(normalizedCommand, context);
       const replay = completed.get(context.commandId);
       if (replay) {
         if (replay.fingerprint !== fingerprint) {
@@ -343,11 +379,11 @@ export function createCommandService({
       }
 
       const stableState = store.getState();
-      assertCommandAllowed(stableState, command, context.actor);
+      assertCommandAllowed(stableState, normalizedCommand, context.actor);
       activeCommandId = context.commandId;
 
       try {
-        const events = await buildEvents(command, context, stableState);
+        const events = await buildEvents(normalizedCommand, context, stableState);
         abortIfRequested(context);
         const nextState = reduceLabEvents(stableState, events);
         store.commit(nextState);
@@ -359,7 +395,7 @@ export function createCommandService({
         completed.set(context.commandId, { fingerprint, result });
         return result;
       } catch (error) {
-        throw commandFailure(command, stableState, error);
+        throw commandFailure(normalizedCommand, stableState, error);
       } finally {
         activeCommandId = null;
       }

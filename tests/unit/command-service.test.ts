@@ -12,6 +12,7 @@ import { completionWithoutProofScenario } from "../../src/scenarios/completion-w
 
 const baselineResult = await runScenarioBaseline(completionWithoutProofScenario);
 const candidateSuite = await runScenarioSuite(completionWithoutProofScenario);
+const recordedAt = "2026-08-30T12:00:00.000Z";
 
 const patch = {
   id: completionWithoutProofScenario.candidate.patch.id,
@@ -29,6 +30,7 @@ function createHarness(effects?: Partial<CommandEffects>) {
   let run = 0;
   const service = createCommandService({
     store,
+    now: () => recordedAt,
     ids: {
       nextRunId(kind, state) {
         run += 1;
@@ -63,6 +65,7 @@ describe("command service", () => {
       outcome: "promoted",
       actor: "human",
       comparedRevision: compared.state.revision,
+      recordedAt,
     });
     expect(store.getState()).toBe(decided.state);
     expect(decided.state.events.map((event) => event.type)).toEqual([
@@ -73,6 +76,15 @@ describe("command service", () => {
       "CANDIDATE_SUITE_COMPLETED",
       "CANDIDATE_PROMOTED",
     ]);
+    expect(decided.state.events.map((event) => event.id)).toEqual([
+      "baseline:revision-1",
+      "baseline:revision-2",
+      "patch:revision-3",
+      "candidate:revision-4",
+      "candidate:revision-5",
+      "decision:revision-6",
+    ]);
+    expect(new Set(decided.state.events.map((event) => event.id)).size).toBe(6);
   });
 
   it("leaves the stable state unchanged when an effect fails", async () => {
@@ -199,6 +211,41 @@ describe("command service", () => {
         context("agent-decision", "agent"),
       ),
     ).rejects.toMatchObject({ code: "ACTOR_NOT_AUTHORIZED" });
+  });
+
+  it("normalizes a padded hypothesis before fingerprinting and persistence", async () => {
+    const { store, service } = createHarness();
+    await service.dispatch({ type: "RUN_BASELINE" }, context("normalize-baseline"));
+    const canonicalHypothesis = "x".repeat(280);
+    const staged = await service.dispatch(
+      {
+        type: "STAGE_PATCH",
+        patch: { ...patch, hypothesis: `  ${canonicalHypothesis}  ` },
+      },
+      context("normalize-patch"),
+    );
+
+    expect(staged.state.candidate?.hypothesis).toBe(canonicalHypothesis);
+    expect(staged.events[0]).toMatchObject({
+      type: "PATCH_STAGED",
+      patch: { hypothesis: canonicalHypothesis },
+    });
+    expect(store.getState()).toBe(staged.state);
+  });
+
+  it("rejects impossible production actor and source pairs", async () => {
+    const { store, service } = createHarness();
+    const initial = store.getState();
+
+    await expect(service.dispatch(
+      { type: "LOAD_MISSION", missionId: "retry" },
+      { commandId: "forged-human-webmcp", actor: "human", source: "webmcp" },
+    )).rejects.toMatchObject({ code: "ACTOR_NOT_AUTHORIZED" });
+    await expect(service.dispatch(
+      { type: "LOAD_MISSION", missionId: "retry" },
+      { commandId: "forged-agent-ui", actor: "agent", source: "ui" },
+    )).rejects.toMatchObject({ code: "ACTOR_NOT_AUTHORIZED" });
+    expect(store.getState()).toBe(initial);
   });
 
   it("rejects an already-aborted command before changing state", async () => {

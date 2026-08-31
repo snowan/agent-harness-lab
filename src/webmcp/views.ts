@@ -1,5 +1,6 @@
 import { LabDomainError } from "../domain/errors";
 import type { CommandResult, LabState } from "../domain/types";
+import type { EvidenceReceipt } from "../receipts/types";
 import { getScenarioDefinition, isScenarioImplemented } from "../scenarios/registry";
 import type { SignalSummary } from "../scenarios/types";
 import {
@@ -189,7 +190,10 @@ export function selectWebMcpComparisonView(state: LabState) {
   } as const;
 }
 
-export function selectWebMcpReceiptView(state: LabState) {
+export function selectWebMcpReceiptView(
+  state: LabState,
+  receipt: EvidenceReceipt,
+) {
   const scenario = getScenarioDefinition(state.missionId);
   const comparison = selectHarnessComparison(state);
   const events = selectCurrentWorkspaceEvents(state, 16);
@@ -199,14 +203,13 @@ export function selectWebMcpReceiptView(state: LabState) {
   const humanCommands = new Set(
     events.filter((event) => event.actor === "human").map((event) => event.commandId),
   ).size;
-  const projectedHypothesis = state.candidate
-    ? hypothesisExcerpt(state.candidate.hypothesis)
-    : null;
   return {
-    schema: "agent-harness-lab-receipt/0.1",
+    schema: `agent-harness-lab-receipt/${receipt.schemaVersion}`,
+    receiptDigest: receipt.receiptDigest,
+    createdAt: receipt.createdAt,
     fixture: scenario !== null,
     fixtureDisclosure: scenario?.fixtureDisclosure
-      ?? "Catalog entry only; no executable fixture is registered.",
+      ?? "No executable fixture is registered for this mission.",
     workspace: {
       revision: state.revision,
       phase: state.phase,
@@ -224,8 +227,6 @@ export function selectWebMcpReceiptView(state: LabState) {
       ? {
           id: state.candidate.id,
           layer: state.candidate.layer,
-          hypothesisExcerpt: projectedHypothesis?.excerpt ?? "",
-          hypothesisTruncated: projectedHypothesis?.truncated ?? false,
           evaluatedDigest: state.candidateSuiteResult?.evaluatedPatchDigest ?? null,
         }
       : null,
@@ -250,7 +251,7 @@ export function selectWebMcpReceiptView(state: LabState) {
       agentCommands,
       humanCommands,
     },
-    limitations: scenario?.limitations ?? ["No executable fixture for this catalog entry."],
+    limitations: scenario?.limitations ?? ["No executable fixture is registered for this mission."],
     promotionIsHumanOnly: true,
   } as const;
 }

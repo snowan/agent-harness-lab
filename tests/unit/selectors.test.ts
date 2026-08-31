@@ -61,17 +61,17 @@ describe("PR3 UI selectors", () => {
       "pending",
     ]);
 
-    const catalogOnly = createInitialLabState("handoff");
-    expect(selectWorkflowSteps(catalogOnly).map((step) => step.status)).toEqual([
-      "unavailable",
-      "unavailable",
-      "unavailable",
-      "unavailable",
+    const handoff = createInitialLabState("handoff");
+    expect(selectWorkflowSteps(handoff).map((step) => step.status)).toEqual([
+      "active",
+      "pending",
+      "pending",
+      "pending",
     ]);
-    expect(selectDecisionAvailability(catalogOnly)).toEqual({
+    expect(selectDecisionAvailability(handoff)).toEqual({
       canPromote: false,
       canReject: false,
-      reason: "This catalog entry has no executable comparison or decision gate in the current release.",
+      reason: "Run and review the candidate suite before deciding.",
     });
 
     const compared = reduceLabEvents(initial, sequence());
@@ -130,6 +130,7 @@ describe("PR3 UI selectors", () => {
         outcome: "promoted",
         actor: "human",
         comparedRevision: compared.revision,
+        recordedAt: "2026-08-30T12:00:00.000Z",
       },
     });
     expect(selectDecisionAvailability(promoted)).toEqual({

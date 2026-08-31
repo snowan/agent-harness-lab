@@ -213,7 +213,9 @@ Required tool set:
 | `compare_harnesses` | Read | Compare the five evidence signals and unresolved risks. |
 | `export_evidence_receipt` | Read | Return a portable structured receipt without deciding or deploying. |
 
-**PR 4 implementation note (August 30, 2026):** The eight tools now use the current [`document.modelContext` draft API](https://webmachinelearning.github.io/webmcp/) with same-page registration, `AbortController` lifecycle cleanup, strict application-side input validation, bounded results, visible adapter status, and explicit read/untrusted annotations. `export_evidence_receipt` returns a versioned bounded receipt view in this slice; PR 5 adds its formal JSON Schema, download flow, canonical receipt digest, and local snapshot recovery.
+**PR 4 implementation note (August 30, 2026):** The eight tools use the current [`document.modelContext` draft API](https://webmachinelearning.github.io/webmcp/) with same-page registration, `AbortController` lifecycle cleanup, strict application-side input validation, bounded results, visible adapter status, and explicit read/untrusted annotations. `export_evidence_receipt` returns the bounded digest-bearing view of the formal receipt without downloading or deciding.
+
+**PR 5 implementation note (August 30, 2026):** All four missions now run as immutable deterministic fixtures with one target and two sealed trials. Completed comparisons build a strict `1.0.0` JSON receipt, validate it against the checked-in allowlist schema, recompute its canonical digest, and download only after a user action. Stable event-sourced workspaces persist in a catalog-versioned local snapshot; boot recovery replays allowlisted events and rejects stale or transient state, unexpected fields, impossible actor/source pairs, and evidence that no longer matches fixed fixture digests. The local snapshot is not signed and does not claim to detect every valid-shape relabeling.
 
 ## 9. Built-in scenario requirements
 
